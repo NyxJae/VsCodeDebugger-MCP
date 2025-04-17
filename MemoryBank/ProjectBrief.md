@@ -10,6 +10,7 @@ vscode 插件部分不需要 webview
 ## 功能模块
 ## 项目文档目录
 - [VS Code插件开发指南](Docs/Doc_VsCode_Extention.md) - VS Code插件开发基础知识和API指南
+- [MCP服务器开发指南](Docs/Doc_MCP.md) - MCP服务器设计、实现和使用说明
 - [通用文档](Docs/Doc_Common.md) - 记录项目经验和收获
 - [变更日志](Docs/ChangeLog.md) - 记录项目版本变更历史
 ## 当前整体需求
@@ -449,5 +450,6 @@ vscode 插件部分不需要 webview
 ### 已完成任务
 - 初始化 VsCode 插件开发脚手架
 - 初始化MCP 开发环境
-### 当前任务
 -  在 VS Code 的状态栏（右下角）添加一个显示 "Debug-MCP: Stopped" 或 "Debug-MCP: Running" 的文本项,根据当前项目的MCP服务器状态变更(),点击可弹出菜单,菜单中先提供一个启停MCP服务器的选项(暂时只用于测试,不用真的启停MCP服务器,只需要在状态栏显示不同的状态即可,但做好准备供后续开发)
+### 当前任务
+- 创建一个极简的  MCP 服务器,只需要能启动,和停止(启动停止后打印一下状态,让我能看到),并让插件能真实启动和停止它.

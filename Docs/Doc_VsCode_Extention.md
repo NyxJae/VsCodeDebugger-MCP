@@ -94,12 +94,12 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
               "DebugMcpManager.port": {
                 "type": "number",
                 "default": 8080,
-                "description": "Port number for the MCP server."
+                "description": "Port number for the Debug MCP Server."
               },
               "DebugMcpManager.autoStart": {
                 "type": "boolean",
                 "default": true,
-                "description": "Automatically start the MCP server when VS Code starts."
+                "description": "Automatically start the Debug MCP Server when VS Code starts."
               }
             }
           }
@@ -251,21 +251,21 @@ async function showSettingsPanel(): Promise<void> {
     const currentPort = config.get<number>('port');
     const autoStartEnabled = config.get<boolean>('autoStart');
 
-    options.push({ label: `Status: ${currentStatus}`, description: 'Current MCP server status', action: () => {} }); // 只显示信息
+    options.push({ label: `Status: ${currentStatus}`, description: 'Current Debug MCP Server status', action: () => {} }); // 只显示信息
 
     if (currentStatus === 'running') {
-        options.push({ label: '$(debug-stop) Stop Server', description: 'Stop the running MCP server', action: () => serverManager?.stop() });
-        options.push({ label: '$(debug-restart) Restart Server', description: 'Restart the MCP server', action: () => serverManager?.restart() });
+        options.push({ label: '$(debug-stop) Stop Server', description: 'Stop the running Debug MCP Server', action: () => serverManager?.stop() });
+        options.push({ label: '$(debug-restart) Restart Server', description: 'Restart the Debug MCP Server', action: () => serverManager?.restart() });
     } else {
-        options.push({ label: '$(debug-start) Start Server', description: 'Start the MCP server', action: () => serverManager?.start() });
+        options.push({ label: '$(debug-start) Start Server', description: 'Start the Debug MCP Server', action: () => serverManager?.start() });
     }
 
     options.push({
         label: `$(gear) Change Port (Current: ${currentPort})`,
-        description: 'Set a new port for the MCP server',
+        description: 'Set a new port for the Debug MCP Server',
         action: async () => {
             const newPortStr = await vscode.window.showInputBox({
-                prompt: 'Enter the new port number for the MCP server',
+                prompt: 'Enter the new port number for the Debug MCP Server',
                 value: String(currentPort),
                 validateInput: value => {
                     const portNum = Number(value);
@@ -275,7 +275,7 @@ async function showSettingsPanel(): Promise<void> {
             if (newPortStr) {
                 const newPort = Number(newPortStr);
                 await config.update('port', newPort, vscode.ConfigurationTarget.Global); // 更新全局设置
-                vscode.window.showInformationMessage(`MCP Server port updated to ${newPort}. Restart the server for changes to take effect.`);
+                vscode.window.showInformationMessage(`Debug MCP Server port updated to ${newPort}. Restart the server for changes to take effect.`);
                 // 可能需要 serverManager?.handleConfigurationChange();
             }
         }
@@ -286,7 +286,7 @@ async function showSettingsPanel(): Promise<void> {
         description: autoStartEnabled ? 'Prevent server from starting automatically' : 'Start server automatically with VS Code',
         action: async () => {
             await config.update('autoStart', !autoStartEnabled, vscode.ConfigurationTarget.Global);
-            vscode.window.showInformationMessage(`MCP Server auto-start ${!autoStartEnabled ? 'enabled' : 'disabled'}.`);
+            vscode.window.showInformationMessage(`Debug MCP Server auto-start ${!autoStartEnabled ? 'enabled' : 'disabled'}.`);
         }
     });
 

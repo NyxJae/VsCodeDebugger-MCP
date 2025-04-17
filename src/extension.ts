@@ -2,9 +2,11 @@
 // Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
 import { StatusBarManager } from './statusBarManager'; // 导入 StatusBarManager
+import { McpServerManager } from './mcpServerManager'; // 导入 McpServerManager
 
-// 声明一个模块级变量来持有 StatusBarManager 实例
+// 声明模块级变量来持有实例
 let statusBarManager: StatusBarManager;
+let mcpServerManager: McpServerManager;
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -16,20 +18,22 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// 实例化 StatusBarManager
 	statusBarManager = new StatusBarManager(context);
+	// 实例化 McpServerManager，并传入 statusBarManager
+	mcpServerManager = new McpServerManager(context, statusBarManager);
 
 	// 注册状态栏项点击时触发的命令
 	const showServerMenuCommand = vscode.commands.registerCommand(statusBarManager.commandId, () => {
-		// 调用 Quick Pick 菜单函数，并传入 manager 实例
-		showServerActionMenu(statusBarManager);
+		// 调用 Quick Pick 菜单函数，并传入两个 manager 实例
+		showServerActionMenu(statusBarManager, mcpServerManager);
 	});
 
-	// 将命令添加到 context.subscriptions
-	context.subscriptions.push(showServerMenuCommand);
+	// 将命令和 manager 实例添加到 context.subscriptions 以便自动清理
+	context.subscriptions.push(showServerMenuCommand, statusBarManager, mcpServerManager);
 
 }
 
 // 新增的 showServerActionMenu 函数
-async function showServerActionMenu(manager: StatusBarManager): Promise<void> {
+async function showServerActionMenu(manager: StatusBarManager, serverManager: McpServerManager): Promise<void> {
 	const status = manager.getStatus();
 	const items: vscode.QuickPickItem[] = [];
 
@@ -40,26 +44,16 @@ async function showServerActionMenu(manager: StatusBarManager): Promise<void> {
 
 	if (status === 'running') {
 		items.push({
-			label: "$(debug-stop) Stop MCP Server",
-			description: "Stops the (simulated) MCP server",
-			action: () => manager.setStatus('stopped')
+			label: "$(debug-stop) Stop Debug MCP Server",
+			description: "Stops the Debug MCP server",
+			action: () => serverManager.stopServer() // 调用 McpServerManager 的 stopServer
 		} as ActionQuickPickItem);
 		// 可以添加重启等其他选项
 	} else if (status === 'stopped' || status === 'error') {
-		 items.push({
-			label: "$(debug-start) Start MCP Server",
-			description: "Starts the (simulated) MCP server",
-			// 模拟启动过程
-			action: () => {
-				manager.setStatus('starting');
-				setTimeout(() => {
-					 // 模拟成功启动
-					manager.setStatus('running');
-					// // 模拟启动失败
-					// manager.setStatus('error');
-					// vscode.window.showErrorMessage("Failed to start MCP Server (Simulated)");
-				}, 1500); // 模拟延迟
-			}
+			items.push({
+			label: "$(debug-start) Start Debug MCP Server",
+			description: "Starts the Debug MCP Server",
+			action: () => serverManager.startServer() // 调用 McpServerManager 的 startServer
 		} as ActionQuickPickItem);
 	}
 	// 添加一个始终显示的状态信息项
@@ -71,7 +65,7 @@ async function showServerActionMenu(manager: StatusBarManager): Promise<void> {
 
 
 	const selectedOption = await vscode.window.showQuickPick(items, {
-		placeHolder: "Select an action for the MCP Server",
+		placeHolder: "Select an action for the Debug MCP Server",
 		title: "Debug-MCP Control"
 	});
 
@@ -86,6 +80,7 @@ async function showServerActionMenu(manager: StatusBarManager): Promise<void> {
 
 // This method is called when your extension is deactivated
 export function deactivate() {
-	// 在插件停用时清理 StatusBarManager 资源
-	statusBarManager?.dispose();
+	// 清理工作由 VS Code 通过 context.subscriptions 自动处理
+	// statusBarManager 和 mcpServerManager 的 dispose 方法会被调用
+	console.log('Deactivating vscode-debugger-mcp extension...');
 }

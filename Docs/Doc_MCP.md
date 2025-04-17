@@ -11,7 +11,7 @@
 
 ### 目录
 
-- [Model Context Protocol (MCP) 服务器开发指南 - VsCode Debugger (stdio-only)](#model-context-protocol-mcp-服务器开发指南---VsCode-debugger-stdio-only)
+- [Model Context Protocol (MCP) 服务器开发指南 - VsCode Debugger (stdio-only)](#model-context-protocol-mcp-服务器开发指南---vscode-debugger-stdio-only)
   - [目录](#目录)
   - [1. 简介](#1-简介)
     - [1.1 MCP 与本项目目标](#11-mcp-与本项目目标)
@@ -31,7 +31,7 @@
   - [6. MCP 协议实现 (stdio)](#6-mcp-协议实现-stdio)
     - [6.1 消息格式 (推荐类 OpenAI/JSON-RPC)](#61-消息格式-推荐类-openaijson-rpc)
     - [6.2 stdio 实现 (`server.ts`)](#62-stdio-实现-serverts)
-  - [7. 工具实现 (VsCode Debugger)](#7-工具实现-VsCode-debugger)
+  - [7. 工具实现 (VsCode Debugger)](#7-工具实现-vscode-debugger)
     - [7.1 工具路由 (`toolHandler.ts`)](#71-工具路由-toolhandlerts)
     - [7.4 遵循工具规范 (Status, Timestamp, stop\_event\_data)](#74-遵循工具规范-status-timestamp-stop_event_data)
   - [8. IPC 通信 (服务器端)](#8-ipc-通信-服务器端)
@@ -43,12 +43,16 @@
   - [10. 错误处理](#10-错误处理)
   - [11. 日志记录](#11-日志记录)
   - [12. 安全注意事项](#12-安全注意事项)
-  - [13. 客户端配置指南 (VsCode / Cline)](#13-客户端配置指南-VsCode--cline)
+  - [13. 客户端配置指南 (RooCode / Cline)](#13-客户端配置指南-roocode--cline)
     - [13.1 配置文件 (`mcp_settings.json`)](#131-配置文件-mcp_settingsjson)
     - [13.2 配置示例](#132-配置示例)
     - [13.3 配置项说明](#133-配置项说明)
   - [14. 测试策略](#14-测试策略)
-  - [15. 相关资源](#15-相关资源)
+  - [15. 基础启停功能](#15-基础启停功能)
+    - [15.1 服务器启停机制](#151-服务器启停机制)
+    - [15.2 插件集成](#152-插件集成)
+    - [15.3 日志输出](#153-日志输出)
+  - [16. 相关资源](#16-相关资源)
 
 ---
 
@@ -300,7 +304,7 @@ import { handleToolCall } from './toolHandler';
 import { initializeIPC, closeIPC } from './ipcClient'; // IPC 初始化
 
 function startStdioServer() {
-    logger.info('Starting MCP Server in stdio mode...');
+    logger.info('Starting Debug MCP Server in stdio mode...');
     initializeIPC(); // 初始化与插件的 IPC
 
     const rl = readline.createInterface({
@@ -714,7 +718,50 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
     *   **模拟插件:** (同前) 编写模拟插件响应 IPC 请求。
 *   **端到端测试:** (同前) 运行真实插件和服务器，使用配置好的 RooCode/Cline 客户端发送调试命令。
 
-### 15. 相关资源
+### 15. 基础启停功能
+
+#### 15.1 服务器启停机制
+
+MCP服务器实现了基础的启动和停止功能：
+
+1. **启动流程**:
+   - 插件通过`child_process.spawn`启动Node.js进程
+   - 服务器启动后输出`MCP Server Started`到stdout
+   - 插件捕获该消息后更新状态为"running"
+
+2. **停止流程**:
+   - 插件发送SIGTERM信号给服务器进程
+   - 服务器捕获信号后输出`MCP Server Stopping...`
+   - 执行清理逻辑后退出(exit code 0)
+
+3. **状态管理**:
+   - 服务器状态通过状态栏实时显示
+   - 支持的状态包括:
+     - starting (启动中)
+     - running (运行中)
+     - stopped (已停止)
+     - error (错误)
+
+#### 15.2 插件集成
+
+插件通过`McpServerManager`类管理服务器生命周期:
+
+```typescript
+// 启动服务器
+mcpServerManager.startServer();
+
+// 停止服务器
+mcpServerManager.stopServer();
+```
+
+#### 15.3 日志输出
+
+所有服务器输出都记录到VS Code的Output Channel:
+- stdout消息标记为`[stdout]`
+- stderr消息标记为`[stderr]`
+- 可通过"View > Output"菜单查看
+
+### 16. 相关资源
 
 *   **Node.js 文档:** [https://nodejs.org/api/](https://nodejs.org/api/) (特别是 `process`, `readline`, `child_process`)
 *   **TypeScript 文档:** [https://www.typescriptlang.org/docs/](https://www.typescriptlang.org/docs/)

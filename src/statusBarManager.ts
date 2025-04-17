@@ -62,24 +62,24 @@ export class StatusBarManager implements vscode.Disposable {
         switch (this.currentStatus) {
             case 'running':
                 this.statusBarItem.text = `$(debug-start) Debug-MCP: Running`;
-                this.statusBarItem.tooltip = `MCP Server is Running. Click to manage.`;
+                this.statusBarItem.tooltip = `Debug MCP Server is Running. Click to manage.`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'starting':
                 this.statusBarItem.text = `$(loading~spin) Debug-MCP: Starting...`;
-                this.statusBarItem.tooltip = `MCP Server is Starting...`;
+                this.statusBarItem.tooltip = `Debug MCP Server is Starting...`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'error':
                 this.statusBarItem.text = `$(error) Debug-MCP: Error`;
-                this.statusBarItem.tooltip = `MCP Server Error. Click to manage.`;
+                this.statusBarItem.tooltip = `Debug MCP Server Error. Click to manage.`;
                 // 使用 VS Code 定义的错误背景色主题颜色
                 this.statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
                 break;
             case 'stopped':
             default:
                 this.statusBarItem.text = `$(debug-stop) Debug-MCP: Stopped`;
-                this.statusBarItem.tooltip = `MCP Server is Stopped. Click to manage.`;
+                this.statusBarItem.tooltip = `Debug MCP Server is Stopped. Click to manage.`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
         }
