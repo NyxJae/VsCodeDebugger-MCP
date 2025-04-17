@@ -447,4 +447,7 @@ vscode 插件部分不需要 webview
 *   **时间戳使用:** AI 在处理 `get_breakpoints` 和 `stop_event_data` 的结果时，应始终检查并记录 `timestamp`。在比较来自不同时间点的信息时（例如，比较旧的 `stop_event_data` 和新的 `get_breakpoints` 结果），应以时间戳较晚的信息为准来判断当前状态。
 
 ---
+### 已完成任务
+- 无
 ### 当前任务
+- 初始化 VsCode 插件开发脚手架
