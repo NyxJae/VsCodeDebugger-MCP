@@ -71,16 +71,16 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
           "commands": [
             {
               "command": "DebugMcpManager.startServer",
-              "title": "Roocode MCP: Start Server"
+              "title": "Debug MCP: Start Server"
             },
             {
               "command": "DebugMcpManager.stopServer",
-              "title": "Roocode MCP: Stop Server"
+              "title": "Debug MCP: Stop Server"
             },
             // ... 其他命令
             {
               "command": "DebugMcpManager.showSettings",
-              "title": "Roocode MCP: Show Settings Panel"
+              "title": "Debug MCP: Show Settings Panel"
             }
           ]
         }
@@ -89,7 +89,7 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
         ```json
         "contributes": {
           "configuration": {
-            "title": "Roocode MCP Manager", // 设置分类标题
+            "title": "Debug MCP Manager", // 设置分类标题
             "properties": {
               "DebugMcpManager.port": {
                 "type": "number",
@@ -147,7 +147,7 @@ let myStatusBarItem: vscode.StatusBarItem;
 // 插件激活时调用，仅调用一次
 export function activate(context: vscode.ExtensionContext) {
 
-    console.log('Congratulations, your extension "roocode-mcp-manager" is now active!');
+    console.log('Congratulations, your extension "Debug-mcp-manager" is now active!');
 
     // 实例化服务器管理器 (包含启动、停止、状态检查等逻辑)
     serverManager = new McpServerManager(context);
@@ -205,14 +205,14 @@ export function activate(context: vscode.ExtensionContext) {
         if (e.affectsConfiguration('DebugMcpManager.port') || e.affectsConfiguration('DebugMcpManager.autoStart')) {
             // 配置变化时可能需要重启服务器或更新行为
             serverManager?.handleConfigurationChange();
-            vscode.window.showInformationMessage('Roocode MCP settings changed. You might need to restart the server.');
+            vscode.window.showInformationMessage('Debug MCP settings changed. You might need to restart the server.');
         }
     }));
 }
 
 // 插件停用时调用，用于清理资源
 export function deactivate(): Thenable<void> | undefined {
-    console.log('Deactivating "roocode-mcp-manager"');
+    console.log('Deactivating "Debug-mcp-manager"');
     myStatusBarItem?.dispose(); // 销毁状态栏项
     return serverManager?.dispose(); // 停止服务器并清理其他资源
 }
@@ -225,19 +225,19 @@ function updateStatusBarItem(status?: string): void {
     const currentStatus = status ?? serverManager?.getStatus() ?? 'stopped'; // 获取当前状态
 
     if (currentStatus === 'running') {
-        myStatusBarItem.text = `$(debug-start) Roocode MCP`; // 使用 Octicon 图标
-        myStatusBarItem.tooltip = `Roocode MCP Server is running. Click to manage.`;
+        myStatusBarItem.text = `$(debug-start) Debug MCP`; // 使用 Octicon 图标
+        myStatusBarItem.tooltip = `Debug MCP Server is running. Click to manage.`;
         myStatusBarItem.backgroundColor = undefined; // 清除背景色
     } else if (currentStatus === 'starting') {
         myStatusBarItem.text = `$(loading~spin) Starting MCP...`;
-        myStatusBarItem.tooltip = `Roocode MCP Server is starting...`;
+        myStatusBarItem.tooltip = `Debug MCP Server is starting...`;
     } else if (currentStatus === 'error') {
         myStatusBarItem.text = `$(error) MCP Error`;
-        myStatusBarItem.tooltip = `Roocode MCP Server encountered an error. Click to manage.`;
+        myStatusBarItem.tooltip = `Debug MCP Server encountered an error. Click to manage.`;
         myStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground'); // 设置错误背景色
     } else { // stopped or other states
-        myStatusBarItem.text = `$(debug-stop) Roocode MCP`;
-        myStatusBarItem.tooltip = `Roocode MCP Server is stopped. Click to manage.`;
+        myStatusBarItem.text = `$(debug-stop) Debug MCP`;
+        myStatusBarItem.tooltip = `Debug MCP Server is stopped. Click to manage.`;
         myStatusBarItem.backgroundColor = undefined;
     }
 }
@@ -314,8 +314,8 @@ async function showSettingsPanel(): Promise<void> {
 
 
     const selectedOption = await vscode.window.showQuickPick(options, {
-        placeHolder: 'Select an action for Roocode MCP Server',
-        title: 'Roocode MCP Manager'
+        placeHolder: 'Select an action for Debug MCP Server',
+        title: 'Debug MCP Manager'
     });
 
     if (selectedOption && selectedOption.action) {

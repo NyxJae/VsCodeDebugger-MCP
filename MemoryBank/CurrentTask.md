@@ -153,8 +153,8 @@
         // ... 其他命令 ...
         {
           "command": "DebugMcpManager.showServerMenu",
-          "title": "Roocode MCP: Show Server Actions"
-          // "category": "Roocode MCP" // 可选分类
+          "title": "Debug MCP: Show Server Actions"
+          // "category": "Debug MCP" // 可选分类
         }
       ]
       // ... 其他贡献点 ...
