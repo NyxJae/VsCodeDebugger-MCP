@@ -2,7 +2,7 @@
 
 ---
 
-## VS Code 插件开发入门与核心 API 指南 (为 Roocode Debugger 插件定制)
+## VS Code 插件开发入门与核心 API 指南 (为 Vscode Debugger 插件定制)
 
 ### 1. 简介
 
@@ -31,8 +31,8 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
     ```
     按照提示操作：
     *   选择 `New Extension (TypeScript)`。
-    *   输入插件名称 (例如 `roocode-mcp-manager`)。
-    *   输入标识符 (例如 `roocodeMcpManager`)。
+    *   输入插件名称 (例如 `Vscode-mcp-manager`)。
+    *   输入标识符 (例如 `DebugMcpManager`)。
     *   输入描述。
     *   选择是否初始化 Git 仓库。
     *   选择包管理器 (npm 或 yarn)。
@@ -58,10 +58,10 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
         ```json
         "activationEvents": [
           "onStartupFinished",
-          "onCommand:roocodeMcpManager.startServer",
-          "onCommand:roocodeMcpManager.stopServer",
-          "onCommand:roocodeMcpManager.restartServer",
-          "onCommand:roocodeMcpManager.showSettings"
+          "onCommand:DebugMcpManager.startServer",
+          "onCommand:DebugMcpManager.stopServer",
+          "onCommand:DebugMcpManager.restartServer",
+          "onCommand:DebugMcpManager.showSettings"
         ]
         ```
 *   `contributes`: **核心部分**。声明插件贡献的功能。
@@ -70,16 +70,16 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
         "contributes": {
           "commands": [
             {
-              "command": "roocodeMcpManager.startServer",
+              "command": "DebugMcpManager.startServer",
               "title": "Roocode MCP: Start Server"
             },
             {
-              "command": "roocodeMcpManager.stopServer",
+              "command": "DebugMcpManager.stopServer",
               "title": "Roocode MCP: Stop Server"
             },
             // ... 其他命令
             {
-              "command": "roocodeMcpManager.showSettings",
+              "command": "DebugMcpManager.showSettings",
               "title": "Roocode MCP: Show Settings Panel"
             }
           ]
@@ -91,12 +91,12 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
           "configuration": {
             "title": "Roocode MCP Manager", // 设置分类标题
             "properties": {
-              "roocodeMcpManager.port": {
+              "DebugMcpManager.port": {
                 "type": "number",
                 "default": 8080,
                 "description": "Port number for the MCP server."
               },
-              "roocodeMcpManager.autoStart": {
+              "DebugMcpManager.autoStart": {
                 "type": "boolean",
                 "default": true,
                 "description": "Automatically start the MCP server when VS Code starts."
@@ -111,12 +111,12 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
           "menus": {
             "commandPalette": [ // 添加到命令面板 (Ctrl+Shift+P)
               {
-                "command": "roocodeMcpManager.startServer",
-                "when": "!roocodeMcpManager.serverRunning" // 条件显示 (需要设置 context)
+                "command": "DebugMcpManager.startServer",
+                "when": "!DebugMcpManager.serverRunning" // 条件显示 (需要设置 context)
               },
               {
-                "command": "roocodeMcpManager.stopServer",
-                "when": "roocodeMcpManager.serverRunning" // 条件显示
+                "command": "DebugMcpManager.stopServer",
+                "when": "DebugMcpManager.serverRunning" // 条件显示
               }
             ],
             // 注意：直接在状态栏添加“按钮”是通过 API 创建 StatusBarItem 实现的，
@@ -124,7 +124,7 @@ Visual Studio Code (VS Code) 插件允许开发者扩展编辑器的功能，从
             // 也可以在这里定义当右键点击状态栏项时出现的菜单项。
             "statusBar/context": [ // 假设你的状态栏项设置了 context key
                {
-                 "command": "roocodeMcpManager.showSettings",
+                 "command": "DebugMcpManager.showSettings",
                  "group": "1_settings@1" // 控制排序
                }
             ]
@@ -156,35 +156,35 @@ export function activate(context: vscode.ExtensionContext) {
     // 命令的实现需要与 package.json 中定义的 command ID 匹配
     // 使用 context.subscriptions.push 注册 disposable 对象，确保插件停用时资源被释放
 
-    context.subscriptions.push(vscode.commands.registerCommand('roocodeMcpManager.startServer', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('DebugMcpManager.startServer', () => {
         serverManager?.start();
         updateStatusBarItem(); // 更新状态栏显示
     }));
 
-    context.subscriptions.push(vscode.commands.registerCommand('roocodeMcpManager.stopServer', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('DebugMcpManager.stopServer', () => {
         serverManager?.stop();
         updateStatusBarItem();
     }));
 
-    context.subscriptions.push(vscode.commands.registerCommand('roocodeMcpManager.restartServer', async () => {
+    context.subscriptions.push(vscode.commands.registerCommand('DebugMcpManager.restartServer', async () => {
         await serverManager?.restart();
         updateStatusBarItem();
     }));
 
-    context.subscriptions.push(vscode.commands.registerCommand('roocodeMcpManager.showSettings', () => {
+    context.subscriptions.push(vscode.commands.registerCommand('DebugMcpManager.showSettings', () => {
         showSettingsPanel(); // 显示自定义的设置面板交互
     }));
 
     // --- 创建和管理状态栏项 ---
     myStatusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100); // 对齐方式和优先级
-    myStatusBarItem.command = 'roocodeMcpManager.showSettings'; // 点击状态栏项时执行的命令
+    myStatusBarItem.command = 'DebugMcpManager.showSettings'; // 点击状态栏项时执行的命令
     context.subscriptions.push(myStatusBarItem); // 添加到 disposables
 
     // 监听服务器状态变化事件 (假设 serverManager 会发出事件)
     serverManager.onStatusChanged((status) => {
         updateStatusBarItem(status);
         // 设置 context key，用于 package.json 中的 when 条件
-        vscode.commands.executeCommand('setContext', 'roocodeMcpManager.serverRunning', status === 'running');
+        vscode.commands.executeCommand('setContext', 'DebugMcpManager.serverRunning', status === 'running');
     });
 
     // 初始化状态栏
@@ -192,7 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
     myStatusBarItem.show(); // 显示状态栏项
 
     // --- 处理自动启动 ---
-    const config = vscode.workspace.getConfiguration('roocodeMcpManager');
+    const config = vscode.workspace.getConfiguration('DebugMcpManager');
     const autoStart = config.get<boolean>('autoStart');
     if (autoStart) {
         // 这里需要实现检查是否已有其他 MCP 服务器运行的逻辑
@@ -202,7 +202,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 监听配置变化
     context.subscriptions.push(vscode.workspace.onDidChangeConfiguration(e => {
-        if (e.affectsConfiguration('roocodeMcpManager.port') || e.affectsConfiguration('roocodeMcpManager.autoStart')) {
+        if (e.affectsConfiguration('DebugMcpManager.port') || e.affectsConfiguration('DebugMcpManager.autoStart')) {
             // 配置变化时可能需要重启服务器或更新行为
             serverManager?.handleConfigurationChange();
             vscode.window.showInformationMessage('Roocode MCP settings changed. You might need to restart the server.');
@@ -247,7 +247,7 @@ async function showSettingsPanel(): Promise<void> {
     const options: { label: string; description?: string; action: () => Promise<void> | void }[] = [];
 
     const currentStatus = serverManager?.getStatus() ?? 'stopped';
-    const config = vscode.workspace.getConfiguration('roocodeMcpManager');
+    const config = vscode.workspace.getConfiguration('DebugMcpManager');
     const currentPort = config.get<number>('port');
     const autoStartEnabled = config.get<boolean>('autoStart');
 
