@@ -18,6 +18,10 @@
       {
         "command": "DebugMcpManager.showServerMenu",
         "title": "Debug MCP: Show Server Actions"
+      },
+      {
+        "command": "DebugMcpManager.copyMcpConfig",
+        "title": "Debug MCP: Copy MCP Server Config"
       }
     ]
   },

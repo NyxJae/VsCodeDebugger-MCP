@@ -27,8 +27,14 @@ export function activate(context: vscode.ExtensionContext) {
 		showServerActionMenu(statusBarManager, mcpServerManager);
 	});
 
+	// 注册复制配置命令
+	const copyMcpConfigCommand = vscode.commands.registerCommand('DebugMcpManager.copyMcpConfig', () => {
+		mcpServerManager.copyMcpConfigToClipboard(); // 调用 McpServerManager 的新方法
+	});
+
 	// 将命令和 manager 实例添加到 context.subscriptions 以便自动清理
-	context.subscriptions.push(showServerMenuCommand, statusBarManager, mcpServerManager);
+	context.subscriptions.push(showServerMenuCommand, copyMcpConfigCommand, statusBarManager, mcpServerManager);
+	// 注意这里添加了 copyMcpConfigCommand
 
 }
 
@@ -50,17 +56,25 @@ async function showServerActionMenu(manager: StatusBarManager, serverManager: Mc
 		} as ActionQuickPickItem);
 		// 可以添加重启等其他选项
 	} else if (status === 'stopped' || status === 'error') {
-			items.push({
+		items.push({
 			label: "$(debug-start) Start Debug MCP Server",
 			description: "Starts the Debug MCP Server",
 			action: () => serverManager.startServer() // 调用 McpServerManager 的 startServer
 		} as ActionQuickPickItem);
 	}
+
+	// 添加复制 MCP 配置 (RooCode/Cline 格式) 的菜单项
+	items.push({
+		label: "$(clippy) Copy MCP Config ",
+		description: "Copy MCP server config",
+		action: () => vscode.commands.executeCommand('DebugMcpManager.copyMcpConfig')
+	} as ActionQuickPickItem);
+
 	// 添加一个始终显示的状态信息项
 	items.push({
-		 label: `Current Status: ${status}`,
-		 description: 'Read-only status information',
-		 // action: () => {} // 无操作或显示详细信息
+		label: `Current Status: ${status}`,
+		description: 'Read-only status information',
+		// action: () => {} // 无操作或显示详细信息
 	} as ActionQuickPickItem);
 
 

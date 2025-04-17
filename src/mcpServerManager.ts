@@ -157,6 +157,46 @@ export class McpServerManager implements vscode.Disposable {
         }
     }
 
+/**
+ * 生成符合 RooCode/Cline 要求的 MCP 服务器配置 JSON 字符串，并复制到剪贴板。
+ */
+public async copyMcpConfigToClipboard(): Promise<void> { // 改为 async
+    try {
+        // 1. 获取服务器脚本的绝对路径 (已在构造函数中获取 this.serverScriptPath)
+        // 2. 处理路径分隔符，确保在 JSON 字符串中正确转义 (Windows: \ -> \\)
+        const escapedServerScriptPath = this.serverScriptPath.replace(/\\/g, '\\\\');
+
+        // 3. 生成符合要求的配置对象
+        const mcpConfig = {
+            mcpServers: {
+                "vscode-debugger-mcp": { // 使用指定的键名
+                    command: "node", // 固定为 "node"
+                    args: [ escapedServerScriptPath ], // 数组，包含转义后的绝对路径
+                    env: {} // 空对象
+                }
+            }
+        };
+
+        // 4. 将配置对象转换为格式化的 JSON 字符串
+        const configString = JSON.stringify(mcpConfig, null, 2);
+
+        // 5. 复制到剪贴板
+        await vscode.env.clipboard.writeText(configString);
+
+        // 6. 显示成功提示
+        vscode.window.showInformationMessage('MCP server configuration (RooCode/Cline format) copied to clipboard!');
+        this.outputChannel.appendLine('MCP server configuration (RooCode/Cline format) copied to clipboard.');
+        console.log('MCP config (RooCode/Cline format) copied:', configString);
+
+    } catch (error) {
+        const errorMsg = `Failed to copy MCP config (RooCode/Cline format): ${error instanceof Error ? error.message : String(error)}`;
+        console.error(errorMsg);
+        this.outputChannel.appendLine(`Error: ${errorMsg}`);
+        vscode.window.showErrorMessage(errorMsg);
+        this.outputChannel.show(true);
+    }
+}
+
     /**
      * 实现 vscode.Disposable 接口，用于在插件停用时清理资源。
      */
