@@ -4,14 +4,14 @@
 
 ---
 
-## Model Context Protocol (MCP) 服务器开发指南 - Roocode Debugger (stdio-only)
+## Model Context Protocol (MCP) 服务器开发指南 - VsCode Debugger (stdio-only)
 
 **版本:** 1.1
 **日期:** 2025-04-17
 
 ### 目录
 
-- [Model Context Protocol (MCP) 服务器开发指南 - Roocode Debugger (stdio-only)](#model-context-protocol-mcp-服务器开发指南---roocode-debugger-stdio-only)
+- [Model Context Protocol (MCP) 服务器开发指南 - VsCode Debugger (stdio-only)](#model-context-protocol-mcp-服务器开发指南---VsCode-debugger-stdio-only)
   - [目录](#目录)
   - [1. 简介](#1-简介)
     - [1.1 MCP 与本项目目标](#11-mcp-与本项目目标)
@@ -31,7 +31,7 @@
   - [6. MCP 协议实现 (stdio)](#6-mcp-协议实现-stdio)
     - [6.1 消息格式 (推荐类 OpenAI/JSON-RPC)](#61-消息格式-推荐类-openaijson-rpc)
     - [6.2 stdio 实现 (`server.ts`)](#62-stdio-实现-serverts)
-  - [7. 工具实现 (Roocode Debugger)](#7-工具实现-roocode-debugger)
+  - [7. 工具实现 (VsCode Debugger)](#7-工具实现-VsCode-debugger)
     - [7.1 工具路由 (`toolHandler.ts`)](#71-工具路由-toolhandlerts)
     - [7.4 遵循工具规范 (Status, Timestamp, stop\_event\_data)](#74-遵循工具规范-status-timestamp-stop_event_data)
   - [8. IPC 通信 (服务器端)](#8-ipc-通信-服务器端)
@@ -43,7 +43,7 @@
   - [10. 错误处理](#10-错误处理)
   - [11. 日志记录](#11-日志记录)
   - [12. 安全注意事项](#12-安全注意事项)
-  - [13. 客户端配置指南 (RooCode / Cline)](#13-客户端配置指南-roocode--cline)
+  - [13. 客户端配置指南 (VsCode / Cline)](#13-客户端配置指南-VsCode--cline)
     - [13.1 配置文件 (`mcp_settings.json`)](#131-配置文件-mcp_settingsjson)
     - [13.2 配置示例](#132-配置示例)
     - [13.3 配置项说明](#133-配置项说明)
@@ -56,7 +56,7 @@
 
 #### 1.1 MCP 与本项目目标
 
-Model Context Protocol (MCP) 是一种允许 AI 模型（如大型语言模型）与外部环境、工具或服务进行交互的协议。本项目旨在开发一个 MCP 服务器，它将充当 AI 代理（例如 Claude、或通过 RooCode/Cline 使用的 AI）和你的 VS Code 插件之间的桥梁。通过这个服务器，AI 可以调用预定义的 "Roocode Debugger" 工具集，进而通过 VS Code 插件间接控制 VS Code 的调试功能（设置断点、单步执行、检查变量等）。
+Model Context Protocol (MCP) 是一种允许 AI 模型（如大型语言模型）与外部环境、工具或服务进行交互的协议。本项目旨在开发一个 MCP 服务器，它将充当 AI 代理（例如 Claude、或通过 VsCode/Cline 使用的 AI）和你的 VS Code 插件之间的桥梁。通过这个服务器，AI 可以调用预定义的 "VsCode Debugger" 工具集，进而通过 VS Code 插件间接控制 VS Code 的调试功能（设置断点、单步执行、检查变量等）。
 
 本服务器的核心职责是：
 *   监听来自 AI 的 MCP 请求（通过 **stdio**）。
@@ -86,7 +86,7 @@ Model Context Protocol (MCP) 是一种允许 AI 模型（如大型语言模型�
 
 #### 3.1 MCP 通信流程
 
-1.  **AI -> Server:** AI 通过其客户端（如 RooCode/Cline）启动 MCP 服务器进程，并通过该进程的 **标准输入 (stdin)** 发送 JSON 请求 (包含 `tool_name`, `tool_input`, 可选 `invocation_id`)。
+1.  **AI -> Server:** AI 通过其客户端（如 VsCode/Cline）启动 MCP 服务器进程，并通过该进程的 **标准输入 (stdin)** 发送 JSON 请求 (包含 `tool_name`, `tool_input`, 可选 `invocation_id`)。
 2.  **Server Processing:**
     *   服务器从 `stdin` 读取并解析请求。
     *   验证输入。
@@ -118,14 +118,14 @@ Model Context Protocol (MCP) 是一种允许 AI 模型（如大型语言模型�
 
 DAP 是 VS Code 与调试器后端通信的标准协议。虽然 MCP 服务器不直接使用 DAP，但：
 *   VS Code 插件会使用 DAP 与调试器交互。
-*   "Roocode Debugger" 工具集的设计（名称、参数、返回值）**紧密映射**了 DAP 的概念和结构。理解 DAP 有助于理解工具的行为和插件需要实现的功能。
+*   "VsCode Debugger" 工具集的设计（名称、参数、返回值）**紧密映射**了 DAP 的概念和结构。理解 DAP 有助于理解工具的行为和插件需要实现的功能。
 
 ### 4. 系统架构
 
 ```mermaid
 graph LR
     subgraph AI Agent Environment
-        A[AI Client (e.g., RooCode/Cline)] -- Spawns Process --> B;
+        A[AI Client (e.g., VsCode/Cline)] -- Spawns Process --> B;
     end
 
     subgraph MCP Server Process (Node.js/TS, stdio)
@@ -172,8 +172,8 @@ graph LR
 #### 5.1 初始化项目
 
 ```bash
-mkdir roocode-mcp-server
-cd roocode-mcp-server
+mkdir VsCode-mcp-server
+cd VsCode-mcp-server
 npm init -y
 npm install typescript @types/node --save-dev
 npx tsc --init
@@ -193,9 +193,9 @@ npm install @types/pino @types/uuid --save-dev # 类型定义
 
 ```json
 {
-  "name": "roocode-mcp-server",
+  "name": "VsCode-mcp-server",
   "version": "1.1.0", // 版本更新
-  "description": "MCP Server (stdio-only) for Roocode Debugger",
+  "description": "MCP Server (stdio-only) for VsCode Debugger",
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
@@ -410,7 +410,7 @@ process.on('SIGTERM', () => {
 });
 ```
 
-### 7. 工具实现 (Roocode Debugger)
+### 7. 工具实现 (VsCode Debugger)
 
 #### 7.1 工具路由 (`toolHandler.ts`)
 
@@ -429,7 +429,7 @@ type ToolHandler = (input: any, invocationId?: string) => Promise<any>;
 const toolRegistry: Map<string, ToolHandler> = new Map();
 
 // --- 注册工具 ---
-// (在此处调用 toolRegistry.set 注册所有 Roocode Debugger 工具的处理函数)
+// (在此处调用 toolRegistry.set 注册所有 VsCode Debugger 工具的处理函数)
 toolRegistry.set('get_debugger_configurations', processGetDebuggerConfigurations); // 需要实现
 toolRegistry.set('set_breakpoint', processSetBreakpoint);
 toolRegistry.set('remove_breakpoint', processRemoveBreakpoint); // 需要实现
@@ -466,7 +466,7 @@ export async function handleToolCall(toolName: string, toolInput: any, invocatio
     }
 }
 
-// --- 实现所有 Roocode Debugger 工具的处理函数 ---
+// --- 实现所有 VsCode Debugger 工具的处理函数 ---
 // (需要为上面注册的每个工具编写 processXXX 函数)
 
 // 示例：同步工具 set_breakpoint (与上一版本 7.2 节相同)
@@ -581,7 +581,7 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 
 #### 7.4 遵循工具规范 (Status, Timestamp, stop_event_data)
 
-*   **`status` 字段:** 所有返回给 AI 的 JSON 对象（无论是成功还是失败）**必须**在 `tool_result` 或 `tool_error` 内部包含一个 `status` 字段，其值严格遵循 "Roocode Debugger" 规范。
+*   **`status` 字段:** 所有返回给 AI 的 JSON 对象（无论是成功还是失败）**必须**在 `tool_result` 或 `tool_error` 内部包含一个 `status` 字段，其值严格遵循 "VsCode Debugger" 规范。
 *   **`timestamp` 字段:**
     *   `get_breakpoints` 的 `tool_result` 需要一个顶层 `timestamp`。
     *   `set_breakpoint` 的 `tool_result.breakpoint` 对象需要一个 `timestamp`。
@@ -670,7 +670,7 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 
 #### 13.2 配置示例
 
-要配置你的 Roocode Debugger MCP 服务器，你需要在 `mcpServers` 对象中添加一个新的条目，例如命名为 `vscode-debugger-mcp`：
+要配置你的 VsCode Debugger MCP 服务器，你需要在 `mcpServers` 对象中添加一个新的条目，例如命名为 `vscode-debugger-mcp`：
 
 ```json
 {
@@ -695,7 +695,7 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 }
 ```
 
-**请务必将 `/full/path/to/your/roocode-mcp-server/dist/server.js` 替换为你实际编译出的 `server.js` 文件的绝对路径。**
+**请务必将 `/full/path/to/your/VsCode-mcp-server/dist/server.js` 替换为你实际编译出的 `server.js` 文件的绝对路径。**
 
 #### 13.3 配置项说明
 
@@ -728,4 +728,4 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 
 ---
 
-这份更新后的指南完全侧重于 stdio 通信，并包含了针对 RooCode/Cline 的具体配置方法。
+这份更新后的指南完全侧重于 stdio 通信，并包含了针对 VsCode/Cline 的具体配置方法。

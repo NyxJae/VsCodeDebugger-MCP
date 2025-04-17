@@ -1,14 +1,14 @@
-好的，我们现在来专门为你整理一份关于 **VS Code 调试 API** 的文档。这份文档将聚焦于如何**通过插件代码来控制和交互 VS Code 的调试功能**，这正是你的 Roocode Debugger 工具组所需要的基础。
+好的，我们现在来专门为你整理一份关于 **VS Code 调试 API** 的文档。这份文档将聚焦于如何**通过插件代码来控制和交互 VS Code 的调试功能**，这正是你的 VsCode Debugger 工具组所需要的基础。
 
 我们将跳过如何调试你 *自己* 的插件代码（这在上一份文档的“运行和调试插件”部分已提及），而是专注于如何让你的插件成为一个“调试协调者”，响应来自 MCP 服务器（或其他来源）的指令来操作 VS Code 的调试器。
 
 ---
 
-## VS Code 调试 API 指南 (为 Roocode Debugger 插件定制)
+## VS Code 调试 API 指南 (为 VsCode Debugger 插件定制)
 
 ### 1. 概述
 
-VS Code 提供了一套强大的 API (`vscode.debug`)，允许插件以编程方式与内置的调试功能进行交互。你的插件需要利用这套 API 来实现 Roocode Debugger 工具组定义的各种能力，例如启动调试会话、设置断点、单步执行、检查变量等。
+VS Code 提供了一套强大的 API (`vscode.debug`)，允许插件以编程方式与内置的调试功能进行交互。你的插件需要利用这套 API 来实现 VsCode Debugger 工具组定义的各种能力，例如启动调试会话、设置断点、单步执行、检查变量等。
 
 **核心目标:** 让你的插件能够代表 AI 代理（通过 MCP 服务器）向 VS Code 的调试系统发出指令，并获取调试状态信息。
 
@@ -378,7 +378,7 @@ VS Code 提供了一套强大的 API (`vscode.debug`)，允许插件以编程方
 
 #### 2.4 响应调试器事件 (使用 `DebugAdapterTracker`)
 
-你的 Roocode Debugger 工具组中的异步工具（`start_debugging`, `continue_debugging`, `step_execution`）需要在调试器**停止**时才能返回结果。VS Code 插件**不能**直接监听一个简单的 `onDidStop` 事件。你需要使用 `DebugAdapterTracker` 来拦截和处理来自 Debug Adapter 的 DAP 事件，特别是 `stopped` 事件。
+你的 VsCode Debugger 工具组中的异步工具（`start_debugging`, `continue_debugging`, `step_execution`）需要在调试器**停止**时才能返回结果。VS Code 插件**不能**直接监听一个简单的 `onDidStop` 事件。你需要使用 `DebugAdapterTracker` 来拦截和处理来自 Debug Adapter 的 DAP 事件，特别是 `stopped` 事件。
 
 *   **注册追踪器工厂 (`vscode.debug.registerDebugAdapterTrackerFactory`)**
     *   **用途:** 为特定类型的调试会话（或所有会话 `*`）注册一个工厂。当该类型的调试会话启动时，VS Code 会调用这个工厂的 `createDebugAdapterTracker` 方法。
@@ -618,4 +618,4 @@ function getLaunchConfigurations() {
 
 ---
 
-这份文档应该为你提供了足够的基础，让你能够开始在你的 VS Code 插件中实现 Roocode Debugger 工具组所需的核心调试交互逻辑。关键在于理解如何使用 `vscode.debug.startDebugging`, `stopDebugging`, `add/removeBreakpoints` 以及如何通过 `DebugSession.customRequest` 发送 DAP 命令，并利用 `DebugAdapterTrackerFactory` 来响应调试器的 `stopped` 事件。
+这份文档应该为你提供了足够的基础，让你能够开始在你的 VS Code 插件中实现 VsCode Debugger 工具组所需的核心调试交互逻辑。关键在于理解如何使用 `vscode.debug.startDebugging`, `stopDebugging`, `add/removeBreakpoints` 以及如何通过 `DebugSession.customRequest` 发送 DAP 命令，并利用 `DebugAdapterTrackerFactory` 来响应调试器的 `stopped` 事件。
