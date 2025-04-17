@@ -9,13 +9,15 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "vscode-debugger-mcp.helloWorld",
-        "title": "Hello World"
+        "command": "DebugMcpManager.showServerMenu",
+        "title": "Debug MCP: Show Server Actions"
       }
     ]
   },
