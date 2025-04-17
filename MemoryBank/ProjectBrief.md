@@ -13,6 +13,7 @@ vscode 插件部分不需要 webview
 - [MCP服务器开发指南](Docs/Doc_MCP.md) - MCP服务器设计、实现和使用说明
 - [通用文档](Docs/Doc_Common.md) - 记录项目经验和收获
 - [变更日志](Docs/ChangeLog.md) - 记录项目版本变更历史
+- [@modelcontextprotocol/sdk文档](Docs/Doc_MCP_SDK.md) - MCP SDK使用说明和API参考
 ## 当前整体需求
 1. 前端 管理MCP服务器
    1. 启动MCP服务器
@@ -452,5 +453,6 @@ vscode 插件部分不需要 webview
 - 初始化MCP 开发环境
 -  在 VS Code 的状态栏（右下角）添加一个显示 "Debug-MCP: Stopped" 或 "Debug-MCP: Running" 的文本项,根据当前项目的MCP服务器状态变更(),点击可弹出菜单,菜单中先提供一个启停MCP服务器的选项(暂时只用于测试,不用真的启停MCP服务器,只需要在状态栏显示不同的状态即可,但做好准备供后续开发)
 - 创建一个极简的  MCP 服务器,只需要能启动,和停止(启动停止后打印一下状态,让我能看到),并让插件能真实启动和停止它.
+- 插件的弹框中提供一个按钮,可一键复制客户端所需的mcp服务器配置
 ### 当前任务
-- 插件的弹框中提供一个按钮,可一键复制客户端所需的mcp服务器配置 (先只提供Cline 需求的格式)
+- 复制配置到客户端后 客户端尝试链接 报 MCP error -32001: Request timed out 应该是还没实现MCP的其他基本功能,先让MCP服务器提供一个功能 HelloWord,返回一个 字符串 "HelloWord",并能让客户端链接上服务器
