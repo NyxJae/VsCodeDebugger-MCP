@@ -710,6 +710,39 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 
 配置完成后，保存 `mcp_settings.json` 文件。下次启动 RooCode 或 Cline 时，它应该能识别并根据需要启动你的 `vscode-debugger-mcp` MCP 服务器，并通过 stdio 与之通信。
 
+Used for remote servers accessed over HTTP/HTTPS:  
+用于通过 HTTP/HTTPS 访问的远程服务器：
+
+- Communicates via Server-Sent Events protocol  
+  通过服务器发送事件协议进行通信
+- Can be hosted on a different machine  
+  可托管在不同的机器上
+- Supports multiple client connections  
+  支持多个客户端连接
+- Requires network access  需要网络访问
+- Allows centralized deployment and management  
+  允许集中部署和管理
+
+For more in-depth information about how SSE transport works, see [MCP Transport Mechanisms.](https://docs.cline.bot/mcp-servers/mcp-transport-mechanisms)  
+关于 SSE 传输如何工作的更深入信息，请参阅 MCP 传输机制。
+
+SSE configuration example:  
+SSE 配置示例：
+
+```markdown
+{
+"mcpServers": {
+"remote-server": {
+"url": "https://your-server-url.com/mcp",
+"headers": {
+"Authorization": "Bearer your-token"
+},
+"alwaysAllow": ["tool3"],
+"disabled": false
+}
+}
+}
+```
 ### 14. 测试策略
 
 *   **单元测试:** (同前) 测试单个函数，Mock IPC。

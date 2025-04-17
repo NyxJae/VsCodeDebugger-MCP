@@ -5,7 +5,7 @@
 Model Context Protocol
 VsCode API
 VsCode Extension API
-stdio
+sse
 vscode 插件部分不需要 webview 
 ## 功能模块
 ## 项目文档目录
@@ -454,5 +454,6 @@ vscode 插件部分不需要 webview
 -  在 VS Code 的状态栏（右下角）添加一个显示 "Debug-MCP: Stopped" 或 "Debug-MCP: Running" 的文本项,根据当前项目的MCP服务器状态变更(),点击可弹出菜单,菜单中先提供一个启停MCP服务器的选项(暂时只用于测试,不用真的启停MCP服务器,只需要在状态栏显示不同的状态即可,但做好准备供后续开发)
 - 创建一个极简的  MCP 服务器,只需要能启动,和停止(启动停止后打印一下状态,让我能看到),并让插件能真实启动和停止它.
 - 插件的弹框中提供一个按钮,可一键复制客户端所需的mcp服务器配置
+- 复制配置到客户端后 客户端尝试链接 报 MCP error -32001: Request timed out 应该是还没实现MCP的其他基本功能,先让MCP服务器提供一个功能 HelloWord,返回一个 字符串 "HelloWord",并能让客户端链接上服务器(使用官方MCP SDK 开发了标准的MCP服务器以解决这个问题)
 ### 当前任务
-- 复制配置到客户端后 客户端尝试链接 报 MCP error -32001: Request timed out 应该是还没实现MCP的其他基本功能,先让MCP服务器提供一个功能 HelloWord,返回一个 字符串 "HelloWord",并能让客户端链接上服务器
+-  mcp服务器由 stdio 切换为 http+SSE 通信协议 由 vscode 插件启动,并能让客户端链接上服务器而不是客户端也能启动mcp服务器

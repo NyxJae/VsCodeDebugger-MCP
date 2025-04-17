@@ -8,6 +8,7 @@ import { StatusBarManager } from './statusBarManager'; // 引入状态栏管理�
  */
 export class McpServerManager implements vscode.Disposable {
     private serverProcess: ChildProcess | null = null;
+    private currentBaseUrl: string | null = null; // 新增：存储基础 URL
     private readonly serverScriptPath: string;
     private readonly serverCwd: string;
     private readonly outputChannel: vscode.OutputChannel; // 添加 OutputChannel 成员
@@ -59,12 +60,19 @@ export class McpServerManager implements vscode.Disposable {
             this.serverProcess.stdout?.on('data', (data: Buffer) => {
                 const message = data.toString().trim();
                 console.log(`Debug MCP Server stdout: ${message}`);
-                this.outputChannel.appendLine(`[stdout] ${message}`); // 输出到 OutputChannel
-                // 检查是否收到启动成功消息
-                if (message.includes('Debug MCP Server Started')) {
-                    this.statusBarManager.setStatus('running');
-                    console.log('Debug MCP Server successfully started.');
-                    this.outputChannel.appendLine('Debug MCP Server successfully started.');
+                this.outputChannel.appendLine(`[stdout] ${message}`);
+
+                // **修改:** 使用正则捕获监听 URL
+                const match = message.match(/listening on (http:\/\/localhost:\d+)/);
+                if (match && match[1]) {
+                    this.currentBaseUrl = match[1]; // 存储基础 URL
+                    // 从 URL 中提取端口号用于状态栏显示
+                    const portMatch = this.currentBaseUrl.match(/:(\d+)$/);
+                    const port = portMatch ? parseInt(portMatch[1], 10) : null;
+                    // 注意：setStatus 将在 statusBarManager.ts 中更新以接受端口参数
+                    this.statusBarManager.setStatus('running', port); // 更新状态栏，传入端口
+                    console.log(`Debug MCP Server successfully started, listening on ${this.currentBaseUrl}.`);
+                    this.outputChannel.appendLine(`Debug MCP Server successfully started, listening on ${this.currentBaseUrl}.`);
                 }
             });
 
@@ -78,7 +86,7 @@ export class McpServerManager implements vscode.Disposable {
             });
 
             // 监听进程退出事件
-            this.serverProcess.on('exit', (code, signal) => {
+            this.serverProcess.on('exit', (code: number | null, signal: NodeJS.Signals | null) => {
                 const exitMessage = `Debug MCP Server process exited with code ${code}, signal ${signal}`;
                 console.log(exitMessage);
                 this.outputChannel.appendLine(exitMessage);
@@ -86,7 +94,14 @@ export class McpServerManager implements vscode.Disposable {
                 // 如果是 SIGTERM 信号，说明是 stopServer 主动停止的
                 if (signal !== 'SIGTERM' && code !== 0 && code !== null) { // 增加 code !== null 判断
                     this.statusBarManager.setStatus('error');
-                    const errorMsg = `Debug MCP Server stopped unexpectedly (Code: ${code}, Signal: ${signal}). Check the 'Debug MCP Server' output channel for details.`;
+                    // Enhance error message for unexpected exits, hinting at potential port issues during startup
+                    let errorMsg = `Debug MCP Server stopped unexpectedly (Code: ${code}, Signal: ${signal}).`;
+                    // 如果 URL 从未被设置 (即服务器从未成功报告监听) 且退出码非 0 (已经在外部 if 判断过), 很可能是在启动阶段失败
+                    // 移除内部的 signal !== 'SIGTERM' 检查以修复 TS 错误，因为外部 if 已保证这一点
+                    if (this.currentBaseUrl === null && code !== 0) {
+                        errorMsg += ` This might be due to issues during startup, such as the configured port being already in use.`;
+                    }
+                    errorMsg += ` Check the 'Debug MCP Server' output channel for more details.`;
                     vscode.window.showErrorMessage(errorMsg);
                     this.outputChannel.appendLine(`Error: ${errorMsg}`);
                     this.outputChannel.show(true); // 确保错误时显示
@@ -95,27 +110,30 @@ export class McpServerManager implements vscode.Disposable {
                     this.statusBarManager.setStatus('stopped');
                     this.outputChannel.appendLine('Debug MCP Server stopped.');
                 }
+                this.currentBaseUrl = null; // 重置 URL
                 this.serverProcess = null; // 清理引用
             });
 
             // 监听进程错误事件 (例如，无法启动进程)
-            this.serverProcess.on('error', (err) => {
-                console.error(`Failed to start Debug MCP Server process: ${err.message}`);
-                const errorMsg = `Failed to start Debug MCP Server process: ${err.message}`;
+            this.serverProcess.on('error', (err: Error) => {
+                // This usually catches errors like 'spawn ENOENT' if node isn't found or permissions issues
+                const errorMsg = `Failed to start Debug MCP Server process: ${err.message}. Ensure Node.js is installed and the extension has permission to execute it. Check the 'Debug MCP Server' output channel.`;
                 console.error(errorMsg);
                 this.outputChannel.appendLine(`Error: ${errorMsg}`);
                 vscode.window.showErrorMessage(errorMsg);
                 this.statusBarManager.setStatus('error');
+                this.currentBaseUrl = null; // 重置 URL
                 this.serverProcess = null; // 清理引用
                 this.outputChannel.show(true); // 确保错误时显示
             });
 
-        } catch (error: any) {
-            const errorMsg = `Error spawning Debug MCP Server process: ${error.message}`;
+        } catch (error: unknown) { // Use unknown for better type safety
+            const errorMsg = `Error spawning Debug MCP Server process: ${error instanceof Error ? error.message : String(error)}`; // Type check error
             console.error(errorMsg);
             this.outputChannel.appendLine(`Error: ${errorMsg}`);
             vscode.window.showErrorMessage(errorMsg);
             this.statusBarManager.setStatus('error');
+            this.currentBaseUrl = null; // 重置 URL
             this.serverProcess = null; // 清理引用
             this.outputChannel.show(true); // 确保错误时显示
         }
@@ -139,63 +157,76 @@ export class McpServerManager implements vscode.Disposable {
         this.outputChannel.appendLine(`Attempting to stop Debug MCP Server (PID: ${pid})...`);
         // 发送 SIGTERM 信号请求优雅退出
         // 'exit' 事件监听器会处理状态更新和引用清理
-        const killed = this.serverProcess.kill('SIGTERM');
-        if (!killed) {
-            const errorMsg = `Failed to send SIGTERM to Debug MCP Server process (PID: ${pid}).`;
+        try {
+            const killed = this.serverProcess.kill('SIGTERM'); // kill can throw if process doesn't exist
+            if (!killed) {
+                // This case might be less likely if kill throws, but handle defensively
+                const errorMsg = `Failed to send SIGTERM to Debug MCP Server process (PID: ${pid}). kill() returned false.`;
+                console.error(errorMsg);
+                this.outputChannel.appendLine(`Error: ${errorMsg}`);
+                this.statusBarManager.setStatus('error');
+                vscode.window.showErrorMessage('Failed to send stop signal to Debug MCP Server. Check Output Channel.');
+                this.outputChannel.show(true);
+                // 强制清理引用，避免状态不一致
+                this.currentBaseUrl = null; // 重置 URL
+                this.serverProcess = null;
+            } else {
+                console.log(`SIGTERM signal sent to Debug MCP Server (PID: ${pid}).`);
+                this.outputChannel.appendLine(`SIGTERM signal sent to Debug MCP Server (PID: ${pid}). Waiting for exit...`);
+                // 不在此处更新状态，等待 'exit' 事件处理
+            }
+        } catch (error: unknown) {
+             // 处理 kill 可能抛出的错误 (例如进程已不存在)
+            const errorMsg = `Error stopping Debug MCP Server process (PID: ${pid}): ${error instanceof Error ? error.message : String(error)}`;
             console.error(errorMsg);
             this.outputChannel.appendLine(`Error: ${errorMsg}`);
-            // 如果发送信号失败，可能需要强制杀死，或者至少更新状态
-            this.statusBarManager.setStatus('error'); // 或者保持 'running' 直到确认退出？这里设为 error
-            vscode.window.showErrorMessage('Failed to send stop signal to Debug MCP Server. Check Output Channel.');
+            this.statusBarManager.setStatus('error'); // 标记为错误状态
+            vscode.window.showErrorMessage('Error trying to stop Debug MCP Server. Check Output Channel.');
             this.outputChannel.show(true);
-            // 强制清理引用，避免状态不一致
+            // 强制清理引用
+            this.currentBaseUrl = null; // 重置 URL
             this.serverProcess = null;
-        } else {
-            console.log(`SIGTERM signal sent to Debug MCP Server (PID: ${pid}).`);
-            this.outputChannel.appendLine(`SIGTERM signal sent to Debug MCP Server (PID: ${pid}). Waiting for exit...`);
-            // 不在此处更新状态，等待 'exit' 事件
         }
     }
 
-/**
- * 生成符合 RooCode/Cline 要求的 MCP 服务器配置 JSON 字符串，并复制到剪贴板。
- */
-public async copyMcpConfigToClipboard(): Promise<void> { // 改为 async
-    try {
-        // 1. 获取服务器脚本的绝对路径 (已在构造函数中获取 this.serverScriptPath)
-        // 2. 处理路径分隔符，确保在 JSON 字符串中正确转义 (Windows: \ -> \\)
-        const escapedServerScriptPath = this.serverScriptPath.replace(/\\/g, '\\\\');
-
-        // 3. 生成符合要求的配置对象
-        const mcpConfig = {
-            mcpServers: {
-                "vscode-debugger-mcp": { // 使用指定的键名
-                    command: "node", // 固定为 "node"
-                    args: [ escapedServerScriptPath ], // 数组，包含转义后的绝对路径
-                    env: {} // 空对象
-                }
+    /**
+     * 生成符合 RooCode/Cline 要求的 MCP 服务器配置 JSON 字符串，并复制到剪贴板。
+     */
+    public async copyMcpConfigToClipboard(): Promise<void> {
+        try {
+            if (this.statusBarManager.getStatus() !== 'running' || !this.currentBaseUrl) {
+                 vscode.window.showWarningMessage('Debug MCP Server is not running or URL is unknown. Cannot copy SSE config.');
+                 this.outputChannel.appendLine('Attempted to copy SSE config, but server not running or URL unknown.');
+                 return;
             }
-        };
 
-        // 4. 将配置对象转换为格式化的 JSON 字符串
-        const configString = JSON.stringify(mcpConfig, null, 2);
+            // **修改:** 生成 SSE 配置
+            // **修改:** 移除不再需要的 sseUrl 和 postUrl 变量
 
-        // 5. 复制到剪贴板
-        await vscode.env.clipboard.writeText(configString);
+            // **修改:** 生成符合 Cline SSE 文档要求的配置
+            const mcpConfig = {
+                mcpServers: {
+                    "vscode-debugger-mcp": { // 服务器名称保持不变
+                        url: this.currentBaseUrl, // 使用基础 URL
+                        headers: {} // 添加空的 headers
+                    }
+                }
+            };
 
-        // 6. 显示成功提示
-        vscode.window.showInformationMessage('MCP server configuration (RooCode/Cline format) copied to clipboard!');
-        this.outputChannel.appendLine('MCP server configuration (RooCode/Cline format) copied to clipboard.');
-        console.log('MCP config (RooCode/Cline format) copied:', configString);
+            const configString = JSON.stringify(mcpConfig, null, 2);
+            await vscode.env.clipboard.writeText(configString);
+            vscode.window.showInformationMessage(`MCP server configuration (URL: ${this.currentBaseUrl}) copied to clipboard!`);
+            this.outputChannel.appendLine(`MCP server configuration (URL: ${this.currentBaseUrl}) copied to clipboard.`);
+            console.log('MCP config copied:', configString);
 
-    } catch (error) {
-        const errorMsg = `Failed to copy MCP config (RooCode/Cline format): ${error instanceof Error ? error.message : String(error)}`;
-        console.error(errorMsg);
-        this.outputChannel.appendLine(`Error: ${errorMsg}`);
-        vscode.window.showErrorMessage(errorMsg);
-        this.outputChannel.show(true);
+        } catch (error: unknown) { // Use unknown for better type safety
+            const errorMsg = `Failed to copy MCP SSE config: ${error instanceof Error ? error.message : String(error)}`; // Type check error
+            console.error(errorMsg);
+            this.outputChannel.appendLine(`Error: ${errorMsg}`);
+            vscode.window.showErrorMessage(errorMsg);
+            this.outputChannel.show(true);
+        }
     }
-}
 
     /**
      * 实现 vscode.Disposable 接口，用于在插件停用时清理资源。

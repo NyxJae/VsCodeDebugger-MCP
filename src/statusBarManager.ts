@@ -11,6 +11,7 @@ export type McpServerStatus = 'stopped' | 'running' | 'starting' | 'error';
 export class StatusBarManager implements vscode.Disposable {
     private statusBarItem: vscode.StatusBarItem;
     private currentStatus: McpServerStatus = 'stopped';
+    private currentPort: number | null = null; // 新增：存储当前端口
     // 定义命令 ID，用于触发显示服务器操作菜单
     public readonly commandId = 'DebugMcpManager.showServerMenu';
 
@@ -36,15 +37,19 @@ export class StatusBarManager implements vscode.Disposable {
     /**
      * 设置新的 MCP 服务器状态，并更新 UI。
      * @param newStatus 新的服务器状态。
+     * @param port 可选的端口号，当状态为 'running' 时提供。
      */
-    public setStatus(newStatus: McpServerStatus): void {
-        if (this.currentStatus === newStatus) {
-            return; // 状态未改变，无需更新
+    public setStatus(newStatus: McpServerStatus, port: number | null = null): void {
+        // 状态和端口都未改变，无需更新
+        if (this.currentStatus === newStatus && this.currentPort === port) {
+            return;
         }
         this.currentStatus = newStatus;
+        // 仅在 running 状态下存储端口，其他状态清除端口
+        this.currentPort = (newStatus === 'running') ? port : null;
         this.updateStatusBar();
         this.updateContext();
-        console.log(`MCP Status changed to: ${this.currentStatus}`); // 调试日志
+        console.log(`MCP Status changed to: ${this.currentStatus}${this.currentPort ? ` (Port: ${this.currentPort})` : ''}`); // 调试日志
     }
 
     /**
@@ -61,8 +66,10 @@ export class StatusBarManager implements vscode.Disposable {
     private updateStatusBar(): void {
         switch (this.currentStatus) {
             case 'running':
-                this.statusBarItem.text = `$(debug-start) Debug-MCP: Running`;
-                this.statusBarItem.tooltip = `Debug MCP Server is Running. Click to manage.`;
+                // 在运行状态下显示端口号（如果可用）
+                const portText = this.currentPort ? ` (Port: ${this.currentPort})` : '';
+                this.statusBarItem.text = `$(debug-start) Debug-MCP: Running${portText}`;
+                this.statusBarItem.tooltip = `Debug MCP Server is Running${portText}. Click to manage.`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'starting':
