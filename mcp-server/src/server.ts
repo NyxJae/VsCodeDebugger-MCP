@@ -134,17 +134,8 @@ async function main() {
 
       httpServer.on('error', (error: NodeJS.ErrnoException) => {
         if (error.code === 'EADDRINUSE') {
-          logger.warn(`Port ${listenPort} is already in use.`);
-          if (listenPort !== 0) { // 仅当尝试的不是随机端口时才重试
-            logger.info('Attempting to listen on a random port (0)...');
-            // 清理旧监听器，防止重复添加 (虽然创建新 server 可能避免了这个问题)
-            httpServer?.removeAllListeners('error');
-            httpServer?.removeAllListeners('listening');
-            startListening(0); // 递归调用，尝试端口 0
-          } else {
-            logger.error('Failed to bind to a random port (port 0). The OS could not assign a free port. Exiting.');
-            process.exit(1); // 如果连随机端口都失败，则退出
-          }
+          logger.error(`Port ${listenPort} is already in use. Exiting.`);
+          process.exit(1); // EADDRINUSE 错误直接退出
         } else {
           logger.error('HTTP server error:', error);
           process.exit(1); // 其他类型的错误直接退出
@@ -162,7 +153,7 @@ async function main() {
         const listenUrl = `http://localhost:${actualPort}`;
 
         // **重要:** 标准输出，用于插件捕获实际监听地址
-        console.log(`Debug MCP Server listening on ${listenUrl}`);
+        console.log(`MCP Server listening on port ${actualPort}`);
 
         // 标准错误输出，用于日志记录
         logger.info(`MCP server HTTP/SSE interface available at ${listenUrl}`);

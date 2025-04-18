@@ -43,16 +43,21 @@
   - [10. 错误处理](#10-错误处理)
   - [11. 日志记录](#11-日志记录)
   - [12. 安全注意事项](#12-安全注意事项)
-  - [13. 客户端配置指南 (RooCode / Cline)](#13-客户端配置指南-roocode--cline)
-    - [13.1 配置文件 (`mcp_settings.json`)](#131-配置文件-mcp_settingsjson)
-    - [13.2 配置示例](#132-配置示例)
-    - [13.3 配置项说明](#133-配置项说明)
-  - [14. 测试策略](#14-测试策略)
-  - [15. 基础启停功能](#15-基础启停功能)
-    - [15.1 服务器启停机制](#151-服务器启停机制)
-    - [15.2 插件集成](#152-插件集成)
-    - [15.3 日志输出](#153-日志输出)
-  - [16. 相关资源](#16-相关资源)
+  - [14. 客户端配置指南 (RooCode / Cline)](#14-客户端配置指南-roocode--cline)
+    - [14.1 配置文件 (`mcp_settings.json`)](#141-配置文件-mcp_settingsjson)
+    - [14.2 配置示例](#142-配置示例)
+    - [14.3 配置项说明](#143-配置项说明)
+  - [15. 测试策略](#15-测试策略)
+  - [16. 基础启停功能](#16-基础启停功能)
+    - [16.1 插件集成](#161-插件集成)
+    - [16.2 日志输出](#162-日志输出)
+  - [16.3 插件判断服务器启动成功的机制](#163-插件判断服务器启动成功的机制)
+  - [17. 端口管理与持久化](#17-端口管理与持久化)
+    - [17.1 端口持久化](#171-端口持久化)
+    - [17.2 端口冲突处理流程](#172-端口冲突处理流程)
+    - [17.3 更改端口方式](#173-更改端口方式)
+    - [17.4 服务器端口传递](#174-服务器端口传递)
+  - [18. 相关资源](#18-相关资源)
 
 ---
 
@@ -662,34 +667,34 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 *   **资源管理:** 注意清理 IPC 连接、移除事件监听器等。
 *   **依赖安全:** 定期更新依赖库 (`npm audit`)。
 
-### 13. 客户端配置指南 (RooCode / Cline)
+### 14. 客户端配置指南 (RooCode / Cline)
 
 根据你提供的信息，RooCode 和 Cline 使用 `mcp_settings.json` 文件来配置通过 stdio 运行的本地 MCP 服务器。
 
-#### 13.1 配置文件 (`mcp_settings.json`)
+#### 14.1 配置文件 (`mcp_settings.json`)
 
 你需要找到并编辑这个配置文件。它的具体位置取决于 RooCode 或 Cline 的安装和文档，通常可能在用户配置目录（如 `~/.config/roocode/`, `~/.cline/`）或项目的工作区设置中。
 
 该文件使用 JSON 格式，包含一个顶层的 `mcpServers` 对象。该对象下的每个键值对代表一个已命名的 MCP 服务器配置。
 
-#### 13.2 配置示例
+#### 14.2 配置示例
 
-要配置你的 VsCode Debugger MCP 服务器，你需要在 `mcpServers` 对象中添加一个新的条目，例如命名为 `vscode-debugger-mcp`：
+要配置你的 VsCode Debugger MCP 服务器，你需要在 `mcpServers` 对象中添加一个新的条目，例如命名为 `vscode-debugger-mcp`。**重要的是，这里的配置应指向由 VS Code 插件启动的服务器，并使用插件持久化存储的端口。**
 
 ```json
 {
   "mcpServers": {
     "vscode-debugger-mcp": {
-      "command": "node", // 指定用 node 执行
-      "args": [
-        "/full/path/to/your/mcp-server/dist/server.js" // **必须是 server.js 的绝对路径**
-        // 如果你的服务器需要额外的命令行参数，可以在这里添加
-        // 例如： "--log-level", "debug"
-      ],
-      "env": {
-        // 如果服务器需要环境变量，可以在这里设置
-        // "LOG_LEVEL": "debug"
-      }
+      "transport": {
+        "type": "sse",
+        // 客户端配置中的端口号应与 VS Code 插件中持久化存储的 MCP 服务器端口号保持一致。
+        // 插件启动时会读取此端口，并在服务器启动后监听该端口。
+        // 客户端应配置为连接到 localhost 的该端口。
+        // 默认端口为 6009。
+        "url": "http://localhost:6009/mcp"
+      },
+      // 如果需要，可以添加其他配置项，例如 headers
+      "headers": {}
     },
     // ... 可能存在的其他服务器配置 ...
     "another-server": {
@@ -699,63 +704,30 @@ async function sendIPCCommand(command: string, args: any, commandId: string): Pr
 }
 ```
 
-**请务必将 `/full/path/to/your/VsCode-mcp-server/dist/server.js` 替换为你实际编译出的 `server.js` 文件的绝对路径。**
+**请注意:**
+- 上述配置示例中的端口号 `6009` 是默认端口。如果用户在 VS Code 插件中更改了端口并持久化，客户端配置中的端口号 **也需要相应更新**，以匹配插件实际启动服务器所使用的端口。
+- 插件提供了“复制 MCP 配置”功能（通过点击状态栏图标弹出的菜单访问），该功能会根据当前使用的端口（如果服务器正在运行）或持久化存储的端口生成最新的客户端配置示例，建议用户使用此功能获取准确的配置。
 
-#### 13.3 配置项说明
+#### 14.3 配置项说明
 
 *   `"vscode-debugger-mcp"`: 你为这个服务器配置选择的唯一名称。AI 客户端会使用这个名称来识别和调用你的服务器。
-*   `"command"`: 启动服务器进程的可执行文件。对于 Node.js 服务器，通常是 `node`。对于已发布的 npm 包,则会使用 npx 
-*   `"args"`: 一个字符串数组，包含传递给 `command` 的参数。**第一个参数必须是你的 `server.js` 的完整路径。** 后续可以添加你的服务器支持的其他命令行参数。
-*   `"env"`: (可选) 一个对象，定义需要为服务器进程设置的环境变量。
+*   `"transport"`: 定义通信传输方式。对于本项目，使用 `sse` 类型。
+*   `"url"`: 服务器的访问地址。对于本地运行的服务器，通常是 `http://localhost:<port>/mcp`，其中 `<port>` 是插件实际启动服务器所使用的端口号。
+*   `"headers"`: (可选) 一个对象，定义客户端在连接时需要发送的 HTTP 头。
 
-配置完成后，保存 `mcp_settings.json` 文件。下次启动 RooCode 或 Cline 时，它应该能识别并根据需要启动你的 `vscode-debugger-mcp` MCP 服务器，并通过 stdio 与之通信。
+配置完成后，保存 `mcp_settings.json` 文件。下次启动 RooCode 或 Cline 时，它应该能识别并尝试连接到你的 `vscode-debugger-mcp` MCP 服务器。
 
-Used for remote servers accessed over HTTP/HTTPS:  
-用于通过 HTTP/HTTPS 访问的远程服务器：
-
-- Communicates via Server-Sent Events protocol  
-  通过服务器发送事件协议进行通信
-- Can be hosted on a different machine  
-  可托管在不同的机器上
-- Supports multiple client connections  
-  支持多个客户端连接
-- Requires network access  需要网络访问
-- Allows centralized deployment and management  
-  允许集中部署和管理
-
-For more in-depth information about how SSE transport works, see [MCP Transport Mechanisms.](https://docs.cline.bot/mcp-servers/mcp-transport-mechanisms)  
-关于 SSE 传输如何工作的更深入信息，请参阅 MCP 传输机制。
-
-SSE configuration example:  
-SSE 配置示例：
-
-```markdown
-{
-"mcpServers": {
-"remote-server": {
-"url": "https://your-server-url.com/mcp",
-"headers": {
-"Authorization": "Bearer your-token"
-},
-"alwaysAllow": ["tool3"],
-"disabled": false
-}
-}
-}
-```
-### 14. 测试策略
+### 15. 测试策略
 
 *   **单元测试:** (同前) 测试单个函数，Mock IPC。
 *   **集成测试:**
     *   **模拟 AI (stdio):** 编写脚本，启动你的 `server.js` 进程，向其 `stdin` 写入 MCP 请求 JSON (每行一个)，并从其 `stdout` 读取和验证响应 JSON。
     *   **模拟插件:** (同前) 编写模拟插件响应 IPC 请求。
-*   **端到端测试:** (同前) 运行真实插件和服务器，使用配置好的 RooCode/Cline 客户端发送调试命令。
+    *   **端到端测试:** (同前) 运行真实插件和服务器，使用配置好的 RooCode/Cline 客户端发送调试命令。
 
-### 15. 基础启停功能
+### 16. 基础启停功能
 
-#### 15.1 服务器启停机制
-
-MCP服务器实现了基础的启动和停止功能：
+MCP服务器实现了基础的启动和停止功能:
 
 1. **启动流程**:
    - 插件通过`child_process.spawn`启动Node.js进程
@@ -775,7 +747,7 @@ MCP服务器实现了基础的启动和停止功能：
      - stopped (已停止)
      - error (错误)
 
-#### 15.2 插件集成
+#### 16.1 插件集成
 
 插件通过`McpServerManager`类管理服务器生命周期:
 
@@ -787,25 +759,69 @@ mcpServerManager.startServer();
 mcpServerManager.stopServer();
 ```
 
-#### 15.3 日志输出
+#### 16.2 日志输出
 
 所有服务器输出都记录到VS Code的Output Channel:
 - stdout消息标记为`[stdout]`
 - stderr消息标记为`[stderr]`
 - 可通过"View > Output"菜单查看
 
-### 16. 相关资源
+### 16.3 插件判断服务器启动成功的机制
 
-*   **Node.js 文档:** [https://nodejs.org/api/](https://nodejs.org/api/) (特别是 `process`, `readline`, `child_process`)
+为了避免未来再次出现“状态栏卡在 Starting”的问题，理解插件判断 MCP 服务器启动成功的机制至关重要。
+
+1.  **机制:** VS Code 插件 (`src/mcpServerManager.ts` 中的 `startServer` 方法) 是通过监听 `mcp-server` 进程的 `stdout` 输出来判断服务器是否成功启动并监听端口的。
+2.  **关键输出:** 服务器端 (`mcp-server/src/server.ts`) **必须**在成功监听端口后，向 `stdout` 输出一行**精确匹配**特定格式的字符串。当前的约定格式是：`Debug MCP Server listening on http://localhost:PORT` (其中 `PORT` 是实际监听的端口号)。
+3.  **重要性:** 这个输出格式对于插件正确更新状态栏（从 "Starting" 到 "Running"）至关重要。如果未来修改服务器端的日志输出，**必须**同步更新插件端的监听逻辑 (`src/mcpServerManager.ts` 中 `stdout` 的 `data` 事件处理部分)，否则会导致状态栏显示不正确。
+4.  **建议:** 未来可以考虑更健壮的机制，如特定的信号字符串或健康检查端点，但目前依赖 `stdout` 匹配。
+
+### 17. 端口管理与持久化
+
+本项目实现了 MCP 服务器端口的持久化存储和冲突处理机制，以确保服务器始终使用用户指定的或可用的端口。
+
+#### 17.1 端口持久化
+
+*   **存储机制:** 插件使用 VS Code 提供的 `ExtensionContext.globalState` API 进行全局持久化存储。这意味着用户在任何 VS Code 工作区或窗口中设置的端口号都将被记住。
+*   **存储键:** 端口号存储在全局状态中，使用的键为 `'mcpServerPort'`。
+*   **默认端口:** 如果全局状态中没有存储端口号，或者存储的值无效，插件将使用默认端口 `6009`。
+*   **相关代码:** 端口的读取和存储逻辑主要封装在 `src/configManager.ts` 文件中。
+
+#### 17.2 端口冲突处理流程
+
+*   **端口检测:** 当插件尝试启动 MCP 服务器时，会首先调用 `src/utils/portUtils.ts` 中的 `isPortInUse` 函数来检测目标端口（从全局状态读取的端口或默认端口）是否已经被其他进程占用。
+*   **警告通知:** 如果检测到目标端口已被占用，插件会通过 `vscode.window.showWarningMessage` 弹出一个警告通知，告知用户端口冲突，并提供一个“输入新端口”的选项。
+*   **用户输入:** 用户点击“输入新端口”后，插件会通过 `vscode.window.showInputBox` 弹出一个输入框，提示用户输入一个新的端口号。
+*   **端口验证:** 用户输入的新端口号会通过 `src/utils/portUtils.ts` 中的 `isValidPort` 函数进行验证，确保其是 1025 到 65535 之间的有效整数。
+*   **持久化新端口:** 如果用户输入了有效的新端口号，插件会调用 `src/configManager.ts` 中的 `storePort` 函数将其持久化到全局状态中，以便后续使用。
+*   **相关代码:** 端口冲突检测和用户交互处理的主要逻辑位于 `src/mcpServerManager.ts` 文件的 `startServer` 和 `handlePortConflict` 函数中。
+
+#### 17.3 更改端口方式
+
+除了在端口冲突时输入新端口，用户还可以通过以下方式手动更改服务器端口：
+
+*   **状态栏菜单:** 点击 VS Code 状态栏中的 Debug-MCP 状态图标，会弹出一个操作菜单。
+*   **选择选项:** 在弹出的菜单中，选择“更改服务器端口”选项。
+*   **输入新端口:** 插件会弹出输入框，用户可以在其中输入新的端口号。
+*   **持久化与生效:** 输入有效端口后，新的端口号将被持久化存储。更改将在下次启动 MCP 服务器时生效。
+*   **相关代码:** 更改端口的菜单项和处理逻辑位于 `src/extension.ts` 文件的 `showServerActionMenu` 函数中。
+
+#### 17.4 服务器端口传递
+
+*   **环境变量:** 插件在启动 `mcp-server` 子进程时，通过设置环境变量 `MCP_PORT` 将选定的端口号（持久化存储的端口或用户输入的新端口）传递给服务器进程。
+*   **服务器端读取:** `mcp-server/src/server.ts` 文件中的服务器启动逻辑会读取 `process.env.MCP_PORT` 环境变量来确定服务器应该监听哪个端口。
+
+### 18. 相关资源
+
+*   **Node.js 文档:** [https://nodejs.org/api/](https://nodejs.org/api/) (特别是 `process`, `readline`, `child_process`, `net`)
 *   **TypeScript 文档:** [https://www.typescriptlang.org/docs/](https://www.typescriptlang.org/docs/)
 *   **Pino (日志):** [https://getpino.io/](https://getpino.io/)
 *   **UUID:** [https://github.com/uuidjs/uuid](https://github.com/uuidjs/uuid)
 *   **Debug Adapter Protocol (DAP):** [https://microsoft.github.io/debug-adapter-protocol/](https://microsoft.github.io/debug-adapter-protocol/)
 *   **JSON Schema:** [https://json-schema.org/](https://json-schema.org/)
-*   **OpenAI Tool Calling:** [https://platform.openai.com/docs/guides/function-calling](https://platform.openai.com/docs/guides/function-calling)
+*   **OpenAI Tool Calling:** [https://platform.openai.com/docs/guides/function-calling](https://platform.openai.com/docs/guides/function-calling)![alt text](image.png)
 *   **JSON-RPC 2.0:** [https://www.jsonrpc.org/specification](https://www.jsonrpc.org/specification)
 *   **(重要) RooCode / Cline 文档:** 查找关于 `mcp_settings.json` 的官方文档以获取最准确的位置和配置细节。
 
 ---
 
-这份更新后的指南完全侧重于 stdio 通信，并包含了针对 VsCode/Cline 的具体配置方法。
+这份更新后的指南详细介绍了 MCP 服务器的开发，包括了 stdio 通信、工具实现、IPC、状态管理、客户端配置以及新增的端口管理与持久化功能。

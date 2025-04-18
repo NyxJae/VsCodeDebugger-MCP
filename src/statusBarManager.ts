@@ -73,8 +73,9 @@ export class StatusBarManager implements vscode.Disposable {
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'starting':
-                this.statusBarItem.text = `$(loading~spin) Debug-MCP: Starting...`;
-                this.statusBarItem.tooltip = `Debug MCP Server is Starting...`;
+                const startingPortText = this.currentPort ? ` (Port: ${this.currentPort})` : ' (Port: ...)';
+                this.statusBarItem.text = `$(loading~spin) Debug-MCP: Starting${startingPortText}`;
+                this.statusBarItem.tooltip = `Debug MCP Server is Starting${startingPortText}`;
                 this.statusBarItem.backgroundColor = undefined;
                 break;
             case 'error':

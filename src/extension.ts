@@ -3,6 +3,8 @@
 import * as vscode from 'vscode';
 import { StatusBarManager } from './statusBarManager'; // 导入 StatusBarManager
 import { McpServerManager } from './mcpServerManager'; // 导入 McpServerManager
+import { getStoredPort, storePort } from './configManager'; // 导入配置管理函数
+import { isValidPort } from './utils/portUtils'; // 导入端口工具函数
 
 // 声明模块级变量来持有实例
 let statusBarManager: StatusBarManager;
@@ -23,8 +25,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 	// 注册状态栏项点击时触发的命令
 	const showServerMenuCommand = vscode.commands.registerCommand(statusBarManager.commandId, () => {
-		// 调用 Quick Pick 菜单函数，并传入两个 manager 实例
-		showServerActionMenu(statusBarManager, mcpServerManager);
+		// 调用 Quick Pick 菜单函数，并传入 context 和两个 manager 实例
+		showServerActionMenu(context, statusBarManager, mcpServerManager);
 	});
 
 	// 注册复制配置命令
@@ -39,7 +41,7 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 // 新增的 showServerActionMenu 函数
-async function showServerActionMenu(manager: StatusBarManager, serverManager: McpServerManager): Promise<void> {
+async function showServerActionMenu(context: vscode.ExtensionContext, manager: StatusBarManager, serverManager: McpServerManager): Promise<void> {
 	const status = manager.getStatus();
 	const items: vscode.QuickPickItem[] = [];
 
@@ -69,6 +71,46 @@ async function showServerActionMenu(manager: StatusBarManager, serverManager: Mc
 		description: "Copy MCP server config",
 		action: () => vscode.commands.executeCommand('DebugMcpManager.copyMcpConfig')
 	} as ActionQuickPickItem);
+
+	// 添加 "更改端口" 选项
+	const changePortItem: vscode.QuickPickItem & { action: () => Promise<void> } = {
+		label: '$(gear) 更改服务器端口',
+		description: `当前配置端口: ${getStoredPort(context)}`, // 显示当前存储的端口
+		action: async () => {
+			const currentPort = getStoredPort(context);
+			const newPortStr = await vscode.window.showInputBox({
+				prompt: `请输入新的 MCP 服务器端口号 (1025-65535)`,
+				placeHolder: `当前: ${currentPort}`,
+				value: currentPort.toString(), // 预填当前值
+				validateInput: (value) => {
+					if (!value) return '端口号不能为空。';
+					if (!isValidPort(value)) {
+						return '请输入 1025 到 65535 之间的有效端口号。';
+					}
+					if (parseInt(value, 10) === currentPort) {
+						return '新端口不能与当前端口相同。';
+					}
+					return null;
+				}
+			});
+
+			if (newPortStr) {
+				const newPort = parseInt(newPortStr, 10);
+				await storePort(context, newPort);
+				vscode.window.showInformationMessage(`MCP 服务器端口已更新为 ${newPort}。更改将在下次服务器启动时生效。`);
+				// 如果服务器正在运行，可以提示用户重启
+				if (serverManager.isRunning()) { // 使用 McpServerManager 的 isRunning 方法
+					 vscode.window.showInformationMessage('请重启 MCP 服务器以应用新的端口设置。', '立即重启').then(selection => {
+						 if (selection === '立即重启') {
+							 serverManager.restartServer(); // 使用 McpServerManager 的 restartServer 方法
+						 }
+					 });
+				}
+			}
+		}
+	};
+
+	items.push(changePortItem);
 
 	// 添加一个始终显示的状态信息项
 	items.push({
