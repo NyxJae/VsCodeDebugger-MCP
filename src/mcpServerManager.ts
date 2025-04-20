@@ -86,12 +86,26 @@ export class McpServerManager implements vscode.Disposable {
                 const serverPath = path.join(this.context.extensionUri.fsPath, 'mcp-server', 'dist', 'server.js'); // Ensure path is correct
                 const nodePath = process.execPath; // Use current VS Code's Node.js path
 
-                // Pass port to server process (using environment variable example)
-                const env = { ...process.env, MCP_PORT: targetPort.toString() };
+                const workspaceFolders = vscode.workspace.workspaceFolders;
+                if (!workspaceFolders || workspaceFolders.length === 0) {
+                    vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
+                    this.statusBarManager.setStatus('error', null); // 更新状态栏提示为错误状态
+                    return; // 提前返回，不启动服务器
+                }
+                // 暂时只处理第一个工作区, 实际应用中可能需要更复杂的逻辑来处理多工作区情况
+                const workspacePath = workspaceFolders[0].uri.fsPath;
+                console.log(`[MCP Server Manager] Workspace path: ${workspacePath}`); // 添加日志
+
+                // Pass port and workspace path to server process via environment variables
+                const env = {
+                    ...process.env, // Inherit current environment variables
+                    MCP_PORT: targetPort.toString(), // Existing port environment variable
+                    VSCODE_WORKSPACE_PATH: workspacePath // New workspace path environment variable
+                };
 
                 this.mcpServerProcess = spawn(nodePath, [serverPath], { env: env, stdio: ['pipe', 'pipe', 'pipe'] }); // Ensure stdio is set correctly to capture output
 
-                console.log(`Spawning server process with PID: ${this.mcpServerProcess.pid}`);
+                console.log(`[MCP Server Manager] Spawning server process with PID: ${this.mcpServerProcess.pid}`);
                 this.outputChannel.appendLine(`Spawning server process with PID: ${this.mcpServerProcess.pid}`);
 
 

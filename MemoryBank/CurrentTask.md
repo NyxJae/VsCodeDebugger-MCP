@@ -1,503 +1,304 @@
 ## 任务上下文
-- src/mcpServerManager.ts (服务器管理相关代码)
-  - 启动服务器: 35-140行 (包含端口检测和错误处理)
-  - 停止服务器: 145-190行
-  - 插件停用清理: 234-238行
-  - 复制配置: 195-229行 (需要修改以使用持久化端口)
-- mcp-server/src/server.ts (MCP服务器实现)
-  - 端口监听和EADDRINUSE错误处理: 118-177行
-  - 默认端口: 12行
-- src/statusBarManager.ts (状态栏管理)
-  - 显示状态和端口: 66-93行 (需要修改以使用持久化端口)
-- src/extension.ts (插件入口和生命周期)
-  - 插件激活: 13-39行 (需要修改以读取持久化端口并在启动时使用)
-  - 插件停用: 96-100行
-  - Quick Pick菜单: 42-93行 (需要添加更改端口的选项)
-- Docs/Doc_MCP.md (MCP服务器文档)
-  - 客户端配置指南 (mcp_settings.json): 666-711行 (需要更新配置格式)
-  - 服务器启停机制: 755-777行
-- Docs/Doc_Common.md (通用文档)
-  - 项目代码文件概览: 4-45行
-- c:/Users/Administrator/AppData/Roaming/Code/User/globalStorage/rooveterinaryinc.roo-cline/settings/mcp_settings.json (客户端配置示例)
-  - 当前使用SSE配置，需要修改为stdio配置并包含端口信息
 
-## VS Code API 参考
-- `vscode.window.showInformationMessage`: 用于显示通知消息，可以包含按钮。
-  - src/test/extension.test.ts: 9行
-  - src/mcpServerManager.ts: 147行, 218行
-- `vscode.window.showInputBox`: 用于显示输入框，获取用户输入。
-  - 未在当前项目中找到使用示例，需要查阅VS Code API文档。
-- `ExtensionContext.globalState`: 用于插件全局持久化存储。
-  - 未在当前项目中找到使用示例，需要查阅VS Code API文档。
+### 1. MCP 工具注册
 
-## Node.js 端口检测
-- 在mcp-server/src/server.ts中通过监听HTTP服务器的'error'事件并检查错误码'EADDRINUSE'来检测端口占用。
+*   在 `mcp-server/src/server.ts` 中，使用 `server.tool()` 方法注册新的 MCP 工具。
+*   方法签名示例：`server.tool(toolName, inputSchema, handlerFunction)`。
+*   `toolName` (string): 工具的名称，例如 `'get_debugger_configurations'`。
+*   `inputSchema` (object): 定义工具输入参数的 JSON Schema。对于 `get_debugger_configurations`，输入参数为空，因此使用 `{}`。
+*   `handlerFunction` (function): 处理工具调用的异步函数。该函数应接收 `args` (根据 inputSchema 解析后的参数) 和 `extra` (包含请求上下文信息) 作为参数，并返回一个 Promise，解析为工具的执行结果。
+*   参考文件：`mcp-server/src/server.ts` (L46-L51), `mcp-server/node_modules/@modelcontextprotocol/sdk/README.md` (提供了 SDK 的基本用法示例)。
 
-## 任务规划：处理端口占用并持久化端口设置 (V2 - 详细版)
+### 2. 获取工作区路径
 
-**目标:** 实现 VS Code 插件在启动 MCP 服务器时，对端口占用进行检测和用户交互处理，并将用户选择的端口进行全局持久化，确保插件各部分功能使用一致的端口。
+*   MCP 服务器 (`mcp-server/src/server.ts`) 是一个独立的 Node.js 进程，由 VS Code 插件 (`src/mcpServerManager.ts`) 启动。
+*   服务器进程本身无法直接访问 VS Code API 或获取当前工作区路径。
+*   VS Code 插件可以通过 `vscode.workspace.workspaceFolders` 获取当前打开的工作区文件夹信息，包括其文件系统路径 (`uri.fsPath`)。
+*   为了让 MCP 服务器知道工作区路径，插件需要在启动服务器子进程时，通过环境变量或命令行参数将工作区路径传递给服务器。
+*   当前 `src/mcpServerManager.ts` (L90) 仅通过环境变量 `MCP_PORT` 传递端口。需要修改此逻辑以传递工作区路径。
+*   参考文件：`src/mcpServerManager.ts` (L85-L92), `Docs/Doc_VsCode_Debug.md` (L41-L46, 提及 `vscode.workspace.workspaceFolders` 在插件中的用法)。
 
-**核心流程图:**
+### 3. 文件读取与解析 (.vscode/launch.json)
 
-```mermaid
-graph TD
-    subgraph 插件端 (VS Code Extension)
-        A[启动服务器请求] --> B(获取持久化端口 P_stored 或默认端口 P_default);
-        B --> C{检测端口 P_target 是否被占用?};
-        C --> |否| D[传递 P_target 启动 MCP 服务器进程];
-        D --> E{服务器启动成功?};
-        E --> |是| F[更新状态栏: Running (Port: P_target)];
-        E --> |否| G[更新状态栏: Error, 提示错误];
-        C --> |是| H[显示通知: "端口 P_target 被占用"];
-        H -- 点击 "输入新端口" --> I[显示 InputBox 获取新端口 P_new];
-        I --> J{P_new 是否有效?};
-        J --> |是| K[持久化存储 P_new];
-        K --> L{检测端口 P_new 是否被占用?};
-        L --> |否| M[传递 P_new 启动 MCP 服务器进程];
-        M --> N{服务器启动成功?};
-        N --> |是| O[更新状态栏: Running (Port: P_new)];
-        N --> |否| P[更新状态栏: Error, 提示错误];
-        L --> |是| Q[显示错误通知: "新端口 P_new 仍被占用"];
-        Q --> R[更新状态栏: Stopped/Error];
-        J --> |否 (无效/取消)| R;
-        H -- 关闭通知 --> R;
-    end
+*   需要在 MCP 服务器端读取 `.vscode/launch.json` 文件。
+*   该文件位于工作区根目录下的 `.vscode` 文件夹内。
+*   可以使用 Node.js 内置的 `fs` 模块进行文件读取，推荐使用异步方法如 `fs.promises.readFile`。
+*   读取到的文件内容是 JSON 格式的字符串，可以使用 `JSON.parse()` 方法将其解析为 JavaScript 对象。
+*   需要处理文件不存在 (`ENOENT` 错误) 和 JSON 格式无效 (`SyntaxError`) 的情况。
+*   参考文件：Node.js `fs` 模块文档 (需要查阅), Node.js `JSON.parse` 文档 (需要查阅)。
+*   当前工作区未找到 `.vscode/launch.json` 文件，这需要在实现时考虑文件不存在的错误处理。
 
-    subgraph 服务器端 (mcp-server)
-        S[插件启动进程时传递端口 P_passed] --> T(读取 P_passed);
-        T --> U{启动 HTTP 服务器监听 P_passed};
-        U --> |成功| V[向 stdout 输出成功信息及端口];
-        U --> |失败 (EADDRINUSE等)| W[向 stderr 输出错误信息];
-    end
+### 4. 错误处理
 
-    D --> S;
-    M --> S;
-    V --> E; % 插件端捕获成功信息
-    W --> E; % 插件端捕获错误信息
-```
+*   根据 `MemoryBank/ProjectBrief.md` 中 4.1 节的定义 (L117-L119)，工具失败时应返回 `status: "error"` 和一个 `message` 字段。
+*   需要处理的错误场景包括：
+    *   无法获取工作区路径 (如果传递机制有问题)。
+    *   `.vscode` 文件夹或 `launch.json` 文件不存在。
+    *   读取文件时发生其他 I/O 错误。
+    *   `launch.json` 文件内容不是有效的 JSON。
+    *   解析后的 JSON 结构不符合预期 (例如，没有 `configurations` 数组)。
+*   参考文件：`MemoryBank/ProjectBrief.md` (L117-L119)。
 
-**实施步骤:**
+### 5. 参考项目文档 (ProjectBrief.md 4.1 节)
 
-**1. 准备工作与工具函数 (新建 `src/utils/portUtils.ts` 或类似文件)**
+*   `MemoryBank/ProjectBrief.md` 的 4.1 节 (L81-L119) 详细定义了 `get_debugger_configurations` 工具的规格。
+*   工具类型：同步工具。
+*   输入参数：无。
+*   成功返回值格式：`{ status: "success", configurations: [...] }`。`configurations` 列表中的每个对象至少包含 `name` (string), `type` (string), `request` (string)，并可包含其他可选属性。
+*   失败返回值格式：`{ status: "error", message: string }`。
+*   实现时必须严格遵循此节定义的输入输出格式。
+*   参考文件：`MemoryBank/ProjectBrief.md` (L81-L119)。
 
-*   **常量定义:**
-    *   `DEFAULT_MCP_PORT = 6009`: 默认端口号。
-    *   `MCP_PORT_KEY = 'mcpServerPort'`: 全局状态存储键。
-*   **端口校验函数:**
-    *   `isValidPort(port: number | string): boolean`: 检查输入是否为 1024-65535 范围内的有效数字。
+### 6. 其他相关文件
+
+*   `src/extension.ts` (L11-L13): 插件入口，负责实例化和管理 `McpServerManager`。
+*   `src/configManager.ts`: 管理持久化配置，包括 MCP 服务器端口。与本任务直接相关性较低，但了解其存在有助于理解插件端如何管理设置。
+*   `src/statusBarManager.ts`: 管理状态栏显示。与本任务直接相关性较低。
+*   `src/utils/portUtils.ts`: 端口相关的工具函数。与本任务直接相关性较低。
+*   `Docs/Doc_VsCode_Debug.md`: 提供了 VS Code 调试 API 的详细信息，特别是如何在插件端与调试功能交互。虽然本任务是在服务器端读取文件，但这份文档有助于理解 VS Code 调试配置的上下文。
+*   `Docs/Doc_Common.md`: 提供了项目文件概览和整体框架描述。
+
+## 任务规划：实现 get_debugger_configurations 工具
+
+本规划旨在指导 `coder` 完成 MCP 服务器中 `get_debugger_configurations` 工具的实现。
+
+**目标:** 实现一个 MCP 工具，该工具能够读取当前 VS Code 工作区下的 `.vscode/launch.json` 文件，解析其中的调试配置，并按照 `ProjectBrief.md` 4.1 节定义的格式返回给客户端。
+
+**涉及文件:**
+
+*   `src/mcpServerManager.ts` (VS Code 插件端)
+*   `mcp-server/src/server.ts` (MCP 服务器主文件)
+*   `mcp-server/src/toolProviders/debuggerTools.ts` (建议新建，存放工具实现逻辑)
+
+**依赖:**
+
+*   Node.js 内置模块: `fs`, `path`
+
+**详细步骤:**
+
+**1. 传递工作区路径 (插件端修改)**
+
+*   **文件:** `src/mcpServerManager.ts`
+*   **目标:** 在启动 MCP 服务器子进程时，将当前工作区路径通过环境变量传递给服务器。
+*   **修改点:** 找到 `startServer` 方法中 `spawn` 函数调用的位置 (大约 L85-L92)。
+*   **实现:**
+    *   在 `spawn` 调用之前，获取工作区路径：
+      ```typescript
+      import * as vscode from 'vscode'; // 确保导入 vscode
+
+      // ... 在 startServer 方法内 ...
+      const workspaceFolders = vscode.workspace.workspaceFolders;
+      if (!workspaceFolders || workspaceFolders.length === 0) {
+          vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
+          this.statusBarManager.updateStatus('Error: No Workspace'); // 更新状态栏提示
+          return; // 提前返回，不启动服务器
+      }
+      // 暂时只处理第一个工作区, 实际应用中可能需要更复杂的逻辑来处理多工作区情况
+      const workspacePath = workspaceFolders[0].uri.fsPath;
+      console.log(`[MCP Server Manager] Workspace path: ${workspacePath}`); // 添加日志
+      ```
+    *   修改 `spawn` 的 `options.env`，添加 `VSCODE_WORKSPACE_PATH`：
+      ```typescript
+      const serverProcess = spawn(nodePath, [serverScriptPath], {
+          stdio: ['pipe', 'pipe', 'pipe', 'ipc'], // 保持 stdio 配置
+          env: {
+              ...process.env, // 继承当前环境变量
+              MCP_PORT: port.toString(), // 保留现有端口环境变量
+              VSCODE_WORKSPACE_PATH: workspacePath // 新增工作区路径环境变量
+          },
+          // cwd: path.dirname(serverScriptPath) // cwd 选项用于设置子进程的工作目录，如果 serverScriptPath 依赖相对路径解析，则需要设置此项。当前实现不依赖此项。
+      });
+      ```
+*   **注意:** 需要导入 `vscode` 模块。确保对 `workspaceFolders` 为空或未定义的情况进行了健壮的处理（例如，显示错误消息并阻止服务器启动）。添加日志以方便调试。
+
+**2. 创建工具 Provider 文件 (服务器端)**
+
+*   **文件:** `mcp-server/src/toolProviders/debuggerTools.ts` (新建)
+*   **目标:** 创建一个单独的文件来存放调试器相关工具的实现逻辑，保持 `server.ts` 清洁。
+*   **内容:**
     ```typescript
-    // 示例: src/utils/portUtils.ts
-    export function isValidPort(port: number | string): boolean {
-        const num = Number(port);
-        return Number.isInteger(num) && num > 1024 && num <= 65535;
-    }
-    ```
-*   **端口检测函数:**
-    *   `isPortInUse(port: number): Promise<boolean>`: 使用 Node.js `net` 模块异步检测端口是否被占用。
-    ```typescript
-    // 示例: src/utils/portUtils.ts
-    import * as net from 'net';
+    import * as fs from 'fs/promises'; // 使用 promises API
+    import * as path from 'path';
+    import { McpToolExtra } from '@modelcontextprotocol/sdk'; // 确认 SDK 是否导出此类型，若无则省略或自定义
 
-    export function isPortInUse(port: number): Promise<boolean> {
-        return new Promise((resolve, reject) => {
-            const server = net.createServer();
-            server.once('error', (err: NodeJS.ErrnoException) => {
-                if (err.code === 'EADDRINUSE') {
-                    resolve(true); // 端口被占用
-                } else {
-                    reject(err); // 其他错误
-                }
-            });
-            server.once('listening', () => {
-                server.close(() => {
-                    resolve(false); // 端口可用
-                });
-            });
-            server.listen(port);
-        });
-    }
-    ```
-
-**2. 持久化端口管理 (`src/extension.ts` 或 `src/configManager.ts`)**
-
-*   **获取/存储端口:**
-    *   `getStoredPort(context: vscode.ExtensionContext): number`: 读取全局状态，无效则返回默认值。
-    *   `storePort(context: vscode.ExtensionContext, port: number): Promise<void>`: 更新全局状态。
-    ```typescript
-    // 示例: src/configManager.ts
-    import * as vscode from 'vscode';
-    import { DEFAULT_MCP_PORT, MCP_PORT_KEY, isValidPort } from './utils/portUtils'; // 假设工具函数在此
-
-    export function getStoredPort(context: vscode.ExtensionContext): number {
-        const storedPort = context.globalState.get<number>(MCP_PORT_KEY);
-        return storedPort && isValidPort(storedPort) ? storedPort : DEFAULT_MCP_PORT;
+    // 定义期望的 launch.json 配置项结构 (至少包含必要的字段)
+    interface LaunchConfiguration {
+        name: string;
+        type: string;
+        request: string;
+        [key: string]: any; // 允许其他任意属性
     }
 
-    export async function storePort(context: vscode.ExtensionContext, port: number): Promise<void> {
-        if (isValidPort(port)) {
-            await context.globalState.update(MCP_PORT_KEY, port);
-            console.log(`Stored new MCP port: ${port}`);
-        } else {
-            console.error(`Attempted to store invalid port: ${port}`);
-            // 可以考虑抛出错误或显示通知
+    // 定义期望的 launch.json 顶层结构
+    interface LaunchJson {
+        version?: string; // version 字段通常存在但可选
+        configurations: LaunchConfiguration[];
+    }
+
+    // 定义工具处理函数的类型 (如果 SDK 没有提供明确类型，可以自定义)
+    type GetDebuggerConfigurationsArgs = Record<string, never>; // 空对象表示无输入参数
+    type GetDebuggerConfigurationsResult =
+        | { status: 'success'; configurations: LaunchConfiguration[] }
+        | { status: 'error'; message: string };
+
+    /**
+     * 处理 get_debugger_configurations MCP 工具请求。
+     * 读取 VS Code 工作区的 .vscode/launch.json 文件并返回其配置。
+     * @param args - 工具输入参数 (空)。
+     * @param extra - MCP 工具附加信息 (未使用)。
+     * @returns 返回包含配置列表或错误信息的 Promise。
+     */
+    export async function handleGetDebuggerConfigurations(
+        args: GetDebuggerConfigurationsArgs,
+        extra: McpToolExtra // extra 参数包含 MCP 请求的附加信息，此工具当前未使用该信息
+    ): Promise<GetDebuggerConfigurationsResult> {
+        console.log('[MCP Server] Handling get_debugger_configurations request...');
+
+        const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
+
+        if (!workspacePath) {
+            const errorMsg = '无法获取 VS Code 工作区路径，请确保插件已正确设置 VSCODE_WORKSPACE_PATH 环境变量。';
+            console.error(`[MCP Server] Error: ${errorMsg}`);
+            return { status: 'error', message: errorMsg };
         }
-    }
-    ```
-*   **在 `activate` 中传递 `context`:** 确保 `mcpServerManager` 和其他需要访问 `globalState` 的模块能获取到 `context`。
+        console.log(`[MCP Server] Workspace path received: ${workspacePath}`);
 
-**3. 修改服务器启动逻辑 (`src/mcpServerManager.ts`)**
+        const launchJsonPath = path.join(workspacePath, '.vscode', 'launch.json');
+        console.log(`[MCP Server] Attempting to read launch.json from: ${launchJsonPath}`);
 
-*   **注入 `context`:** 修改 `McpServerManager` 构造函数或方法以接收 `vscode.ExtensionContext`。
-*   **重构 `startServer` 方法:**
-    ```typescript
-    // 伪代码: src/mcpServerManager.ts
-    import { getStoredPort, storePort } from './configManager'; // 假设配置管理函数在此
-    import { isPortInUse, isValidPort } from './utils/portUtils'; // 假设工具函数在此
-    import * as vscode from 'vscode';
-    import * as cp from 'child_process';
-
-    export class McpServerManager {
-        private context: vscode.ExtensionContext;
-        private mcpServerProcess: cp.ChildProcess | null = null;
-        private currentPort: number | null = null;
-        // ... 其他属性和statusBarManager实例
-
-        constructor(context: vscode.ExtensionContext, statusBarManager: StatusBarManager) {
-            this.context = context;
-            this.statusBarManager = statusBarManager;
-            // ...
-        }
-
-        public async startServer(): Promise<void> {
-            if (this.mcpServerProcess) {
-                vscode.window.showInformationMessage('MCP 服务器已在运行。');
-                return;
-            }
-
-            let targetPort = getStoredPort(this.context);
-            let portAvailable = false;
+        try {
+            const fileContent = await fs.readFile(launchJsonPath, 'utf-8');
+            console.log('[MCP Server] Successfully read launch.json content.');
 
             try {
-                const inUse = await isPortInUse(targetPort);
-                if (inUse) {
-                    const newPort = await this.handlePortConflict(targetPort);
-                    if (newPort !== null) {
-                        targetPort = newPort; // 更新目标端口
-                        // 再次检测新端口是否可用
-                        const newPortInUse = await isPortInUse(targetPort);
-                        if (!newPortInUse) {
-                           portAvailable = true;
-                        } else {
-                            vscode.window.showErrorMessage(`新端口 ${targetPort} 仍然被占用。请检查或尝试其他端口。`);
-                            this.statusBarManager.setStatus('Error', null); // 更新状态栏
-                            return; // 无法启动
-                        }
-                    } else {
-                        // 用户取消或输入无效，不启动服务器
-                        this.statusBarManager.setStatus('Stopped', null); // 确保状态栏更新
-                        return;
-                    }
+                // 移除 JSON 文件开头的注释 (常见于 launch.json)
+                // 这是一个简单的实现，可能无法处理所有类型的注释，但能处理常见的 // 和 /* */
+                const jsonStringWithoutComments = fileContent.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
+                const parsedJson: unknown = JSON.parse(jsonStringWithoutComments);
+                console.log('[MCP Server] Successfully parsed launch.json content (after removing comments).');
+
+                // 类型守卫和结构验证
+                if (
+                    typeof parsedJson === 'object' &&
+                    parsedJson !== null &&
+                    'configurations' in parsedJson &&
+                    Array.isArray((parsedJson as LaunchJson).configurations)
+                ) {
+                    const launchJson = parsedJson as LaunchJson;
+
+                    // 过滤并提取所需信息, 确保 name, type, request 存在
+                    const validConfigurations = launchJson.configurations.filter(
+                        config => typeof config.name === 'string' && typeof config.type === 'string' && typeof config.request === 'string'
+                    );
+
+                    // 提取所有字段，符合 ProjectBrief 的可选要求
+                    const resultConfigurations = validConfigurations.map(config => ({ ...config }));
+
+
+                    console.log(`[MCP Server] Found ${resultConfigurations.length} valid configurations.`);
+                    return { status: 'success', configurations: resultConfigurations };
                 } else {
-                    portAvailable = true; // 原始端口可用
+                    const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
+                    console.error(`[MCP Server] Error: ${errorMsg}`);
+                    return { status: 'error', message: errorMsg };
                 }
-
-                if (portAvailable) {
-                    this.statusBarManager.setStatus('Starting', targetPort); // 更新状态栏为启动中
-                    // 启动服务器进程，传递端口
-                    const serverPath = vscode.Uri.joinPath(this.context.extensionUri, 'mcp-server', 'dist', 'server.js').fsPath; // 确保路径正确
-                    const nodePath = process.execPath; // 使用当前 VS Code 的 Node.js 路径
-
-                    // 传递端口给服务器进程 (使用环境变量示例)
-                    const env = { ...process.env, MCP_PORT: targetPort.toString() };
-
-                    this.mcpServerProcess = cp.spawn(nodePath, [serverPath], { env: env, stdio: ['pipe', 'pipe', 'pipe'] }); // 确保stdio设置正确以捕获输出
-
-                    this.mcpServerProcess.stdout?.on('data', (data) => {
-                        const output = data.toString();
-                        console.log(`MCP Server stdout: ${output}`);
-                        // **关键:** 检查服务器成功启动的特定输出
-                        if (output.includes(`MCP Server listening on port ${targetPort}`)) {
-                             this.currentPort = targetPort;
-                             this.statusBarManager.setStatus('Running', this.currentPort);
-                             vscode.window.showInformationMessage(`MCP 服务器已在端口 ${this.currentPort} 启动。`);
-                        }
-                    });
-
-                    this.mcpServerProcess.stderr?.on('data', (data) => {
-                        const errorOutput = data.toString();
-                        console.error(`MCP Server stderr: ${errorOutput}`);
-                        // 可以根据错误输出判断启动是否失败
-                        // vscode.window.showErrorMessage(`启动 MCP 服务器失败: ${errorOutput}`);
-                        // this.handleServerError(); // 调用错误处理
-                    });
-
-                    this.mcpServerProcess.on('error', (err) => {
-                        console.error('Failed to start MCP server process:', err);
-                        vscode.window.showErrorMessage(`启动 MCP 服务器进程失败: ${err.message}`);
-                        this.handleServerError();
-                    });
-
-                    this.mcpServerProcess.on('close', (code) => {
-                        console.log(`MCP server process exited with code ${code}`);
-                        // 只有在非用户主动停止时才视为错误或意外关闭
-                        if (this.mcpServerProcess) { // 检查是否是用户主动停止
-                           this.handleServerError(`服务器进程意外退出，退出码: ${code}`);
-                        }
-                    });
+            } catch (parseError) {
+                if (parseError instanceof SyntaxError) {
+                    const errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
+                    console.error(`[MCP Server] Error parsing launch.json: ${errorMsg}`);
+                    return { status: 'error', message: errorMsg };
                 }
-            } catch (error: any) {
-                console.error('Error starting MCP server:', error);
-                vscode.window.showErrorMessage(`启动 MCP 服务器时出错: ${error.message}`);
-                this.statusBarManager.setStatus('Error', null);
+                // 处理其他可能的解析错误
+                const errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+                console.error(`[MCP Server] ${errorMsg}`);
+                // 对于未知错误，最好也返回给客户端
+                return { status: 'error', message: errorMsg };
             }
-        }
-
-        // 新增：处理端口冲突的函数
-        private async handlePortConflict(occupiedPort: number): Promise<number | null> {
-            const choice = await vscode.window.showWarningMessage(
-                `MCP 服务器端口 ${occupiedPort} 已被占用。`,
-                { modal: true }, // 模态对话框，阻止其他操作直到用户响应
-                '输入新端口'
-            );
-
-            if (choice === '输入新端口') {
-                const newPortStr = await vscode.window.showInputBox({
-                    prompt: `请输入一个新的端口号 (1025-65535)，当前端口 ${occupiedPort} 被占用。`,
-                    placeHolder: '例如: 6010',
-                    validateInput: (value) => {
-                        if (!value) return '端口号不能为空。';
-                        if (!isValidPort(value)) {
-                            return '请输入 1025 到 65535 之间的有效端口号。';
-                        }
-                        return null; // 验证通过
-                    }
-                });
-
-                if (newPortStr) {
-                    const newPort = parseInt(newPortStr, 10);
-                    await storePort(this.context, newPort); // 持久化新端口
-                    return newPort;
-                }
-            }
-            // 用户取消或关闭通知
-            vscode.window.showInformationMessage('MCP 服务器启动已取消。');
-            return null;
-        }
-
-         // 新增或修改：统一的错误处理和状态重置
-        private handleServerError(errorMessage?: string): void {
-            if (errorMessage) {
-               vscode.window.showErrorMessage(`MCP 服务器错误: ${errorMessage}`);
-            }
-            this.mcpServerProcess = null;
-            this.currentPort = null;
-            this.statusBarManager.setStatus('Error', null);
-        }
-
-
-        public stopServer(): void {
-            if (this.mcpServerProcess) {
-                console.log('Stopping MCP server...');
-                const processToKill = this.mcpServerProcess;
-                this.mcpServerProcess = null; // 先标记为 null，避免 close 事件触发 handleServerError
-                this.currentPort = null;
-                processToKill.kill(); // 发送 SIGTERM 信号
-                this.statusBarManager.setStatus('Stopped', null);
-                vscode.window.showInformationMessage('MCP 服务器已停止。');
+        } catch (readError: any) { // 使用 any 或 unknown 并进行检查
+            if (readError.code === 'ENOENT') {
+                // 文件或目录不存在
+                const errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
+                console.warn(`[MCP Server] ${errorMsg}`);
+                // 根据 ProjectBrief 定义，找不到文件是错误
+                return { status: 'error', message: errorMsg };
             } else {
-                vscode.window.showInformationMessage('MCP 服务器未在运行。');
+                // 其他文件读取错误
+                const errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
+                console.error(`[MCP Server] Error reading launch.json: ${errorMsg}`);
+                return { status: 'error', message: errorMsg };
             }
-        }
-
-        public copyMcpConfigToClipboard(): void {
-            const portToUse = this.currentPort ?? getStoredPort(this.context); // 优先用当前运行端口，否则用存储端口
-            const config = {
-                // 根据实际需要生成配置，确保使用 portToUse
-                // 示例 SSE 配置:
-                transport: {
-                    type: "sse",
-                    url: `http://localhost:${portToUse}/mcp`
-                }
-                // 示例 Stdio 配置 (如果需要):
-                // transport: {
-                //     type: "stdio"
-                // },
-                // command: ["node", "path/to/mcp-server/dist/server.js", "--port", portToUse.toString()] // 示例命令行
-            };
-            const configString = JSON.stringify(config, null, 2);
-            vscode.env.clipboard.writeText(configString);
-            vscode.window.showInformationMessage(`MCP 配置已复制到剪贴板 (端口: ${portToUse})。`);
-        }
-        // ... 其他方法 (restartServer 等)
-    }
-    ```
-*   **移除旧的端口占用处理:** 删除 `startServer` 中原有的 `EADDRINUSE` 错误处理和端口递增逻辑。
-
-**4. 修改 MCP 服务器 (`mcp-server/src/server.ts`)**
-
-*   **读取端口:**
-    ```typescript
-    // 示例: mcp-server/src/server.ts
-    import http from 'http';
-    import express from 'express';
-    import { McpServer, SSEServerTransport } from '@modelcontextprotocol/sdk'; // 假设使用SSE
-
-    // 从环境变量读取端口，提供默认值
-    const DEFAULT_PORT = 6009; // 与插件端默认值保持一致或独立
-    const port = parseInt(process.env.MCP_PORT || '', 10) || DEFAULT_PORT;
-
-    const app = express();
-    const server = http.createServer(app);
-    const mcpServer = new McpServer();
-
-    // 设置 SSE Transport
-    const sseTransport = new SSEServerTransport(mcpServer, '/mcp'); // 假设端点是 /mcp
-    sseTransport.attach(app); // 将 SSE 路由附加到 Express 应用
-
-    // ... (注册你的 MCP 工具 providers)
-    // mcpServer.registerToolProvider(...)
-
-    server.listen(port, () => {
-        // **关键:** 输出明确的成功信息，包含端口号
-        console.log(`MCP Server listening on port ${port}`);
-        console.log(`SSE endpoint available at http://localhost:${port}/mcp`);
-    });
-
-    server.on('error', (error) => {
-        // 输出错误到 stderr，方便插件端捕获
-        console.error(`MCP Server error: ${error.message}`);
-        process.exit(1); // 发生错误时退出
-    });
-    ```
-*   **移除服务器端端口重试:** 删除之前可能存在的 `EADDRINUSE` 错误处理和端口重试逻辑。
-
-**5. 修改状态栏显示 (`src/statusBarManager.ts`)**
-
-*   **更新 `setStatus` 方法:**
-    ```typescript
-    // 示例: src/statusBarManager.ts
-    import * as vscode from 'vscode';
-
-    export class StatusBarManager {
-        private statusBarItem: vscode.StatusBarItem;
-
-        constructor() {
-            this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
-            this.statusBarItem.command = 'extension.showServerActionMenu'; // 点击时触发的命令
-            this.setStatus('Stopped', null); // 初始状态
-            this.statusBarItem.show();
-        }
-
-        public setStatus(status: 'Starting' | 'Running' | 'Stopped' | 'Error', port: number | null): void {
-            let text = 'Debug-MCP: ';
-            let tooltip = 'MCP 服务器状态';
-            let backgroundColor: vscode.ThemeColor | undefined = undefined;
-
-            switch (status) {
-                case 'Starting':
-                    text += `Starting (Port: ${port ?? '...'})`;
-                    tooltip = 'MCP 服务器正在启动...';
-                    backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
-                    break;
-                case 'Running':
-                    text += `Running (Port: ${port})`;
-                    tooltip = `MCP 服务器正在运行于端口 ${port}`;
-                    backgroundColor = undefined; // 默认背景
-                    break;
-                case 'Stopped':
-                    text += 'Stopped';
-                    tooltip = 'MCP 服务器已停止';
-                    backgroundColor = undefined;
-                    break;
-                case 'Error':
-                    text += 'Error';
-                    tooltip = 'MCP 服务器遇到错误';
-                    backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
-                    break;
-            }
-            this.statusBarItem.text = text;
-            this.statusBarItem.tooltip = tooltip;
-            this.statusBarItem.backgroundColor = backgroundColor;
-        }
-
-        public dispose(): void {
-            this.statusBarItem.dispose();
         }
     }
     ```
+*   **注意:**
+    *   使用 `fs.promises` 进行异步文件读取。
+    *   添加了详细的 `console.log` 并带有 `[MCP Server]` 前缀以区分日志来源。
+    *   实现了更健壮的错误处理逻辑，包括环境变量检查、文件未找到、读取错误、JSON 解析错误（增加了注释移除逻辑）、结构验证失败。
+    *   对解析后的 `configurations` 数组中的每个配置项进行了基本验证（确保 `name`, `type`, `request` 存在且为字符串）。
+    *   返回格式严格遵循 `ProjectBrief.md` 4.1 节的定义。
 
-**6. 修改 Quick Pick 菜单 (`src/extension.ts`)**
+**3. 注册工具 (服务器端修改)**
 
-*   **添加 "更改端口" 选项:**
-    ```typescript
-    // 示例: src/extension.ts (showServerActionMenu 函数内)
-    import { getStoredPort, storePort } from './configManager'; // 假设配置管理函数在此
-    import { isValidPort } from './utils/portUtils'; // 假设工具函数在此
-    import * as vscode from 'vscode';
+*   **文件:** `mcp-server/src/server.ts`
+*   **目标:** 导入新的处理函数并注册 `get_debugger_configurations` 工具。
+*   **修改点:** 在文件顶部导入，并在 `server.tool()` 调用区域添加注册逻辑。
+*   **实现:**
+    *   导入处理函数：
+      ```typescript
+      import { handleGetDebuggerConfigurations } from './toolProviders/debuggerTools'; // 确认路径相对于 server.ts 正确
+      ```
+    *   注册工具 (确保在 `server.listen()` 之前调用)：
+      ```typescript
+      // ... 其他 import 和 server 实例创建 ...
 
-    // ... 其他 QuickPickItem
+      // 注册 Hello World 工具 (示例，保留或移除)
+      // server.tool('hello_world', {}, async (args, extra) => {
+      //     console.log('Handling hello_world request...');
+      //     return { status: 'success', message: 'Hello World from MCP Server!' };
+      // });
+      // console.log('[MCP Server] Registered tool: hello_world');
 
-    const changePortItem: vscode.QuickPickItem & { action: () => Promise<void> } = {
-        label: '$(gear) 更改服务器端口',
-        description: `当前配置端口: ${getStoredPort(context)}`, // 显示当前存储的端口
-        action: async () => {
-            const currentPort = getStoredPort(context);
-            const newPortStr = await vscode.window.showInputBox({
-                prompt: `请输入新的 MCP 服务器端口号 (1025-65535)`,
-                placeHolder: `当前: ${currentPort}`,
-                value: currentPort.toString(), // 预填当前值
-                validateInput: (value) => {
-                    if (!value) return '端口号不能为空。';
-                    if (!isValidPort(value)) {
-                        return '请输入 1025 到 65535 之间的有效端口号。';
-                    }
-                    if (parseInt(value, 10) === currentPort) {
-                        return '新端口不能与当前端口相同。';
-                    }
-                    return null;
-                }
-            });
+      // 注册获取调试配置的工具
+      server.tool(
+          'get_debugger_configurations', // 工具名称，与 ProjectBrief 一致
+          {}, // 输入 Schema 为空对象，因为此工具无输入参数
+          handleGetDebuggerConfigurations // 指定处理函数
+      );
+      console.log('[MCP Server] Registered tool: get_debugger_configurations');
 
-            if (newPortStr) {
-                const newPort = parseInt(newPortStr, 10);
-                await storePort(context, newPort);
-                vscode.window.showInformationMessage(`MCP 服务器端口已更新为 ${newPort}。更改将在下次服务器启动时生效。`);
-                // 如果服务器正在运行，可以提示用户重启
-                if (mcpServerManager.isRunning()) { // 假设 mcpServerManager 有 isRunning 方法
-                     vscode.window.showInformationMessage('请重启 MCP 服务器以应用新的端口设置。', '立即重启').then(selection => {
-                         if (selection === '立即重启') {
-                             mcpServerManager.restartServer(); // 假设有 restartServer 方法
-                         }
-                     });
-                }
-            }
-        }
-    };
+      // ... 启动服务器逻辑 (server.listen) ...
+      ```
+*   **注意:** 确保导入路径正确。添加日志确认工具已注册。
 
-    items.push(changePortItem);
+**4. 测试**
 
-    // ... 后续显示 Quick Pick 的代码
-    ```
+*   **准备:**
+    *   在你的 VS Code 工作区中创建 `.vscode/launch.json` 文件，包含不同类型的配置项（包括格式正确和可能格式错误的）。
+    *   可以创建一个没有 `.vscode` 文件夹或 `launch.json` 的工作区用于测试文件未找到的情况。
+*   **执行:**
+    *   重新构建并运行 VS Code 插件 (`npm run compile` & F5)。
+    *   观察 VS Code 的 "输出" 面板 (选择 "Debug-MCP" 或 "Extension Host") 和 MCP 服务器的控制台日志。
+    *   确保插件端成功获取并传递了工作区路径。
+    *   确保服务器端成功启动并注册了 `get_debugger_configurations` 工具。
+    *   使用 MCP 客户端 (如 Cline) 连接到服务器。
+    *   调用 `get_debugger_configurations` 工具。
+*   **验证场景:**
+    *   **场景 1: `launch.json` 存在且格式正确:**
+        *   预期客户端收到 `status: "success"` 和包含正确配置信息的 `configurations` 数组。
+        *   检查服务器日志，确认读取和解析成功。
+    *   **场景 2: `.vscode` 目录或 `launch.json` 文件不存在:**
+        *   预期客户端收到 `status: "error"` 和类似 "无法找到 launch.json 文件" 的 `message`。
+        *   检查服务器日志，确认捕获到 `ENOENT` 错误。
+    *   **场景 3: `launch.json` 存在但 JSON 格式错误 (例如，缺少逗号):**
+        *   预期客户端收到 `status: "error"` 和包含 `SyntaxError` 信息的 `message`。
+        *   检查服务器日志，确认捕获到 `SyntaxError`。
+    *   **场景 4: `launch.json` 存在且 JSON 有效，但缺少 `configurations` 数组或其结构不正确:**
+        *   预期客户端收到 `status: "error"` 和类似 "缺少有效的 'configurations' 数组" 的 `message`。
+        *   检查服务器日志，确认结构验证失败。
+    *   **场景 5: (可选) 插件未能传递 `VSCODE_WORKSPACE_PATH` 环境变量:**
+        *   预期客户端收到 `status: "error"` 和关于环境变量未设置的 `message`。
+        *   检查服务器日志，确认捕获到环境变量缺失的错误。
 
-**7. 文档更新 (创建新任务)**
+**总结:**
 
-*   **需要记录的内容:**
-    *   端口持久化机制 (`ExtensionContext.globalState`, `MCP_PORT_KEY`)。
-    *   端口占用时的通知和交互流程。
-    *   如何在状态栏菜单中更改端口。
-    *   服务器端如何接收端口（环境变量 `MCP_PORT`）。
-    *   更新客户端配置示例 (`mcp_settings.json`)，强调端口配置。
-*   **操作:** 使用 `<new_task>` 工具为 `docer` 模式创建一个新任务。
-
-**注意事项:**
-
-*   **错误处理:** 上述伪代码提供了一些基本的错误处理，实际实现中需要更健壮的错误捕获和用户提示。
-*   **异步操作:** 大量使用了 `async/await`，确保正确处理 Promise。
-*   **状态同步:** 确保 `McpServerManager` 中的 `currentPort` 和 `mcpServerProcess` 状态与实际情况一致，并在服务器启动、停止、出错时正确更新。
-*   **依赖安装:** 如果引入了新的依赖（如 `express`），确保在 `mcp-server/package.json` 中添加并安装。
-*   **路径问题:** 确保插件端启动服务器时使用的路径 (`serverPath`) 正确指向编译后的 `mcp-server/dist/server.js`。
-*   **Node.js 版本:** 确保插件和服务器使用的 Node.js 版本兼容 `net` 模块和 `async/await`。
-
-**下一步:**
-
-在您确认此任务规划后，我将使用 `attempt_completion` 工具结束当前任务。后续的编码工作将由 "编码者" 角色根据此规划进行。
+该规划提供了实现 `get_debugger_configurations` 工具的详细步骤，涵盖了插件端和服务器端的修改。重点在于正确传递工作区路径、健壮的文件读取与解析、严格的错误处理以及遵循项目规范。通过创建独立的 provider 文件提高了代码的可维护性。详细的日志记录和测试场景有助于确保功能的正确性和稳定性。

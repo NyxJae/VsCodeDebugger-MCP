@@ -5,6 +5,9 @@ import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js"; //
 import express, { Request, Response } from "express"; // 导入 express
 import http from 'http'; // 导入 http 模块以获取 Server 类型
 
+// 导入新的工具处理函数
+import { handleGetDebuggerConfigurations } from './toolProviders/debuggerTools';
+
 // import { z } from "zod"; // Zod is not strictly needed for the simple helloWorld tool without schema validation
 // import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/server/types.js"; // Attempt to import if needed, otherwise use 'any'
 
@@ -49,6 +52,15 @@ server.tool(
   helloWorldHandler // Pass the correctly signed handler function
   // description is not directly accepted by McpServer.tool
 );
+logger.info('[MCP Server] Registered tool: helloWorld'); // 添加日志
+
+// 注册获取调试配置的工具
+server.tool(
+    'get_debugger_configurations', // 工具名称，与 ProjectBrief 一致
+    {}, // 输入 Schema 为空对象，因为此工具无输入参数
+    handleGetDebuggerConfigurations // 指定处理函数
+);
+logger.info('[MCP Server] Registered tool: get_debugger_configurations'); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {
