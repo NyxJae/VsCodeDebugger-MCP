@@ -1,304 +1,99 @@
+# 当前任务
+
+为实现 MCP 工具 `set_breakpoint` 收集必要的上下文信息，并将其写入 `MemoryBank/CurrentTask.md` 的 `## 任务上下文` 部分。
+
 ## 任务上下文
 
-### 1. MCP 工具注册
+### 1. `set_breakpoint` 工具规格
+- MemoryBank/ProjectBrief.md (L122-L160)
 
-*   在 `mcp-server/src/server.ts` 中，使用 `server.tool()` 方法注册新的 MCP 工具。
-*   方法签名示例：`server.tool(toolName, inputSchema, handlerFunction)`。
-*   `toolName` (string): 工具的名称，例如 `'get_debugger_configurations'`。
-*   `inputSchema` (object): 定义工具输入参数的 JSON Schema。对于 `get_debugger_configurations`，输入参数为空，因此使用 `{}`。
-*   `handlerFunction` (function): 处理工具调用的异步函数。该函数应接收 `args` (根据 inputSchema 解析后的参数) 和 `extra` (包含请求上下文信息) 作为参数，并返回一个 Promise，解析为工具的执行结果。
-*   参考文件：`mcp-server/src/server.ts` (L46-L51), `mcp-server/node_modules/@modelcontextprotocol/sdk/README.md` (提供了 SDK 的基本用法示例)。
+### 2. VS Code 断点设置 API
+- Docs/Doc_VsCode_Debug.md (L126-L160) - 重点关注 `vscode.debug.addBreakpoints` API 用法。
 
-### 2. 获取工作区路径
+### 3. 插件与服务器通信
+- src/mcpServerManager.ts - 插件端 MCP 服务器管理。
+- mcp-server/src/server.ts - MCP 服务器端工具注册和 SSE 通信处理。
+- 需要建立服务器向插件发送指令的机制，以便服务器接收到 `set_breakpoint` 工具调用后，能够请求插件执行 `vscode.debug.addBreakpoints` API。现有代码中尚未发现此类通用机制，可能需要新增。
 
-*   MCP 服务器 (`mcp-server/src/server.ts`) 是一个独立的 Node.js 进程，由 VS Code 插件 (`src/mcpServerManager.ts`) 启动。
-*   服务器进程本身无法直接访问 VS Code API 或获取当前工作区路径。
-*   VS Code 插件可以通过 `vscode.workspace.workspaceFolders` 获取当前打开的工作区文件夹信息，包括其文件系统路径 (`uri.fsPath`)。
-*   为了让 MCP 服务器知道工作区路径，插件需要在启动服务器子进程时，通过环境变量或命令行参数将工作区路径传递给服务器。
-*   当前 `src/mcpServerManager.ts` (L90) 仅通过环境变量 `MCP_PORT` 传递端口。需要修改此逻辑以传递工作区路径。
-*   参考文件：`src/mcpServerManager.ts` (L85-L92), `Docs/Doc_VsCode_Debug.md` (L41-L46, 提及 `vscode.workspace.workspaceFolders` 在插件中的用法)。
+### 4. 现有代码结构参考
+- mcp-server/src/toolProviders/debuggerTools.ts - 现有 `get_debugger_configurations` 工具的实现，可作为新工具实现的参考。
+- mcp-server/src/server.ts - 工具注册部分，可作为注册 `set_breakpoint` 工具的参考。
 
-### 3. 文件读取与解析 (.vscode/launch.json)
+## 任务规划
 
-*   需要在 MCP 服务器端读取 `.vscode/launch.json` 文件。
-*   该文件位于工作区根目录下的 `.vscode` 文件夹内。
-*   可以使用 Node.js 内置的 `fs` 模块进行文件读取，推荐使用异步方法如 `fs.promises.readFile`。
-*   读取到的文件内容是 JSON 格式的字符串，可以使用 `JSON.parse()` 方法将其解析为 JavaScript 对象。
-*   需要处理文件不存在 (`ENOENT` 错误) 和 JSON 格式无效 (`SyntaxError`) 的情况。
-*   参考文件：Node.js `fs` 模块文档 (需要查阅), Node.js `JSON.parse` 文档 (需要查阅)。
-*   当前工作区未找到 `.vscode/launch.json` 文件，这需要在实现时考虑文件不存在的错误处理。
+### 代码审查结果 (`set_breakpoint` 实现)
 
-### 4. 错误处理
+**审查目标:** 确保 `set_breakpoint` 工具的代码修改符合 `MemoryBank/CurrentTask.md` 的任务规划和 `MemoryBank/ProjectBrief.md` 的工具规格。
 
-*   根据 `MemoryBank/ProjectBrief.md` 中 4.1 节的定义 (L117-L119)，工具失败时应返回 `status: "error"` 和一个 `message` 字段。
-*   需要处理的错误场景包括：
-    *   无法获取工作区路径 (如果传递机制有问题)。
-    *   `.vscode` 文件夹或 `launch.json` 文件不存在。
-    *   读取文件时发生其他 I/O 错误。
-    *   `launch.json` 文件内容不是有效的 JSON。
-    *   解析后的 JSON 结构不符合预期 (例如，没有 `configurations` 数组)。
-*   参考文件：`MemoryBank/ProjectBrief.md` (L117-L119)。
+**审查范围:**
+*   `mcp-server/src/pluginCommunicator.ts`
+*   `mcp-server/src/server.ts`
+*   `src/mcpServerManager.ts`
+*   `mcp-server/src/toolProviders/debuggerTools.ts`
 
-### 5. 参考项目文档 (ProjectBrief.md 4.1 节)
+**总体评价:**
 
-*   `MemoryBank/ProjectBrief.md` 的 4.1 节 (L81-L119) 详细定义了 `get_debugger_configurations` 工具的规格。
-*   工具类型：同步工具。
-*   输入参数：无。
-*   成功返回值格式：`{ status: "success", configurations: [...] }`。`configurations` 列表中的每个对象至少包含 `name` (string), `type` (string), `request` (string)，并可包含其他可选属性。
-*   失败返回值格式：`{ status: "error", message: string }`。
-*   实现时必须严格遵循此节定义的输入输出格式。
-*   参考文件：`MemoryBank/ProjectBrief.md` (L81-L119)。
+代码基本实现了 `set_breakpoint` 工具的核心功能，包括通过 IPC 在插件端调用 VS Code API 设置断点，并处理了断点 ID 获取的限制。IPC 通信机制也已建立。然而，存在一些与规划和规格不一致的问题需要修正。
 
-### 6. 其他相关文件
+**详细审查点:**
 
-*   `src/extension.ts` (L11-L13): 插件入口，负责实例化和管理 `McpServerManager`。
-*   `src/configManager.ts`: 管理持久化配置，包括 MCP 服务器端口。与本任务直接相关性较低，但了解其存在有助于理解插件端如何管理设置。
-*   `src/statusBarManager.ts`: 管理状态栏显示。与本任务直接相关性较低。
-*   `src/utils/portUtils.ts`: 端口相关的工具函数。与本任务直接相关性较低。
-*   `Docs/Doc_VsCode_Debug.md`: 提供了 VS Code 调试 API 的详细信息，特别是如何在插件端与调试功能交互。虽然本任务是在服务器端读取文件，但这份文档有助于理解 VS Code 调试配置的上下文。
-*   `Docs/Doc_Common.md`: 提供了项目文件概览和整体框架描述。
+1.  **IPC 通信机制:**
+    *   **符合:**
+        *   使用 Node.js 子进程 IPC (`process.send`/`on('message')`) 实现了服务器与插件间的双向通信。
+        *   `pluginCommunicator.ts` 实现了基于 Promise 和 UUID 的请求-响应模型，包含超时处理。
+        *   `mcpServerManager.ts` 正确监听来自服务器的请求并实现了发送响应的逻辑。
+    *   **问题与建议:**
+        *   **接口定义不一致 (关键问题):**
+            *   `mcp-server/src/pluginCommunicator.ts` 中定义的 `PluginRequest` 和 `PluginResponse` 接口与 `MemoryBank/CurrentTask.md` (L38-L56) 规划的接口定义**不一致**（字段名如 `id` vs `requestId`, `type` vs `command`, `success` vs `status` 等）。
+            *   `mcp-server/src/server.ts` 中监听 IPC 消息时 (L250) 的结构检查逻辑也基于了错误（未规划）的接口定义。
+            *   `src/mcpServerManager.ts` 中定义的接口 (L8-L22) **符合**规划。
+            *   **建议:** **必须**将 `mcp-server/src/pluginCommunicator.ts` 和 `mcp-server/src/server.ts` (L250 处的检查逻辑) 中的 IPC 接口定义修改为与 `MemoryBank/CurrentTask.md` (L38-L56) 和 `src/mcpServerManager.ts` (L8-L22) 完全一致，以确保两端通信协议匹配，避免潜在错误。
 
-## 任务规划：实现 get_debugger_configurations 工具
+2.  **插件端逻辑 (`src/mcpServerManager.ts`):**
+    *   **符合:**
+        *   IPC 消息监听和响应发送逻辑基本正确，且使用的接口定义符合规划。
+        *   `setBreakpoint` 请求处理逻辑：
+            *   参数解析正确。
+            *   正确调用 `vscode.debug.addBreakpoints`，并处理了 1-based 到 0-based 的行/列号转换。
+            *   实现了规划中的断点 ID 获取折中方案（查询 `vscode.debug.breakpoints`），并考虑了精确匹配和行匹配，处理了 ID 可能为 `undefined` 的情况。
+            *   成功和失败响应的构造（包括 `breakpoint` 对象结构和时间戳）符合 `ProjectBrief.md` 和 `CurrentTask.md` 的要求。
+    *   **建议:**
+        *   获取断点 ID 的延迟 (`setTimeout(resolve, 100)`) (L165) 是一个经验性的值，可以考虑是否需要更健壮的方式或接受其局限性。目前看是可接受的折中。
 
-本规划旨在指导 `coder` 完成 MCP 服务器中 `get_debugger_configurations` 工具的实现。
+3.  **服务器端逻辑 (`mcp-server/src/toolProviders/debuggerTools.ts`):**
+    *   **符合:**
+        *   `handleSetBreakpoint` 函数结构清晰。
+        *   正确调用了 `sendRequestToPlugin` 发起 IPC 请求。
+        *   处理了 IPC 通信成功和失败（包括超时）的情况。
+        *   在处理插件成功响应时，对返回的 `breakpoint` 数据结构进行了检查 (L147-154)。
+    *   **问题与建议:**
+        *   **MCP 返回值格式不符:**
+            *   `handleSetBreakpoint` 成功时 (L165-169)，将插件返回的 `breakpoint` 对象 `JSON.stringify` 后放入了 `content: [{ type: "text", text: ... }]` 结构中。
+            *   而 `ProjectBrief.md` (L134-L156) 中 `set_breakpoint` 工具的成功返回值规格要求是直接包含 `breakpoint` 对象，即 `{ status: "success", breakpoint: { ... } }`。
+            *   **建议:** 修改 `handleSetBreakpoint` 的成功返回逻辑，使其直接返回符合 `ProjectBrief.md` 规格的结构，而不是将其序列化为字符串放入 `content` 中。这可能需要调整 `SetBreakpointResult` 类型定义或直接构造符合 MCP SDK 预期的包含 `breakpoint` 字段的成功对象（具体如何构造需要参考 SDK 文档或示例，可能 SDK 本身不支持直接返回复杂对象，需要确认）。**如果 SDK 强制要求 `content` 数组，则当前实现可能是必要的妥协，但应在文档中注明此差异。** *(暂定当前实现可接受，因为 SDK 通常要求 content 数组)*
+        *   **IPC 接口调用:** `sendRequestToPlugin({ type: 'setBreakpoint', payload: args })` (L140) 中的 `type` 字段与 `pluginCommunicator.ts` 中定义的接口（使用 `type`）一致，但与规划（使用 `command`）不一致。修正 `pluginCommunicator.ts` 的接口后，此处也需要同步修改为 `command: 'setBreakpoint'`。
 
-**目标:** 实现一个 MCP 工具，该工具能够读取当前 VS Code 工作区下的 `.vscode/launch.json` 文件，解析其中的调试配置，并按照 `ProjectBrief.md` 4.1 节定义的格式返回给客户端。
+4.  **工具注册 (`mcp-server/src/server.ts`):**
+    *   **符合:**
+        *   工具已使用 `server.tool` 注册。
+    *   **问题与建议:**
+        *   **Schema 传递方式:** 注册 `set_breakpoint` 时 (L70)，传递的是 `setBreakpointSchema.shape` 而不是完整的 Zod schema 对象 `setBreakpointSchema`。
+        *   **建议:** 修改为 `server.tool('set_breakpoint', setBreakpointSchema, handleSetBreakpoint);` 以确保 MCP SDK 能正确使用 Zod schema 进行输入验证。
 
-**涉及文件:**
+5.  **错误处理:**
+    *   **符合:** 各个环节（参数校验、IPC 通信、插件 API 调用、文件读写）都包含了基本的错误处理逻辑。
+    *   **建议:** 解决 IPC 接口定义不一致的问题后，错误处理会更加健壮。
 
-*   `src/mcpServerManager.ts` (VS Code 插件端)
-*   `mcp-server/src/server.ts` (MCP 服务器主文件)
-*   `mcp-server/src/toolProviders/debuggerTools.ts` (建议新建，存放工具实现逻辑)
+6.  **代码风格与质量:**
+    *   **符合:** 代码使用了 TypeScript，结构相对清晰，包含日志。
+    *   **建议:** 解决上述接口和格式不一致的问题将显著提高代码质量和可维护性。
 
-**依赖:**
+**总结与后续行动:**
 
-*   Node.js 内置模块: `fs`, `path`
+代码已接近完成，但存在几个关键的不一致性问题需要修复：
 
-**详细步骤:**
+1.  **统一 IPC 消息接口定义:** 在 `mcp-server/src/pluginCommunicator.ts` 和 `mcp-server/src/server.ts` 中修正接口定义，使其与规划和 `src/mcpServerManager.ts` 一致。
+2.  **修正工具注册:** 在 `mcp-server/src/server.ts` 中注册 `set_breakpoint` 时传递完整的 Zod schema 对象。
+3.  **确认并调整 MCP 返回值格式:** 确认 MCP SDK 是否允许直接返回包含 `breakpoint` 对象的成功响应。如果允许，修改 `mcp-server/src/toolProviders/debuggerTools.ts` 以符合 `ProjectBrief.md` 规格；如果不允许，则当前实现（返回 JSON 字符串）是可接受的妥协，但建议在文档中说明。*(暂定当前实现可接受)*
 
-**1. 传递工作区路径 (插件端修改)**
-
-*   **文件:** `src/mcpServerManager.ts`
-*   **目标:** 在启动 MCP 服务器子进程时，将当前工作区路径通过环境变量传递给服务器。
-*   **修改点:** 找到 `startServer` 方法中 `spawn` 函数调用的位置 (大约 L85-L92)。
-*   **实现:**
-    *   在 `spawn` 调用之前，获取工作区路径：
-      ```typescript
-      import * as vscode from 'vscode'; // 确保导入 vscode
-
-      // ... 在 startServer 方法内 ...
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      if (!workspaceFolders || workspaceFolders.length === 0) {
-          vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
-          this.statusBarManager.updateStatus('Error: No Workspace'); // 更新状态栏提示
-          return; // 提前返回，不启动服务器
-      }
-      // 暂时只处理第一个工作区, 实际应用中可能需要更复杂的逻辑来处理多工作区情况
-      const workspacePath = workspaceFolders[0].uri.fsPath;
-      console.log(`[MCP Server Manager] Workspace path: ${workspacePath}`); // 添加日志
-      ```
-    *   修改 `spawn` 的 `options.env`，添加 `VSCODE_WORKSPACE_PATH`：
-      ```typescript
-      const serverProcess = spawn(nodePath, [serverScriptPath], {
-          stdio: ['pipe', 'pipe', 'pipe', 'ipc'], // 保持 stdio 配置
-          env: {
-              ...process.env, // 继承当前环境变量
-              MCP_PORT: port.toString(), // 保留现有端口环境变量
-              VSCODE_WORKSPACE_PATH: workspacePath // 新增工作区路径环境变量
-          },
-          // cwd: path.dirname(serverScriptPath) // cwd 选项用于设置子进程的工作目录，如果 serverScriptPath 依赖相对路径解析，则需要设置此项。当前实现不依赖此项。
-      });
-      ```
-*   **注意:** 需要导入 `vscode` 模块。确保对 `workspaceFolders` 为空或未定义的情况进行了健壮的处理（例如，显示错误消息并阻止服务器启动）。添加日志以方便调试。
-
-**2. 创建工具 Provider 文件 (服务器端)**
-
-*   **文件:** `mcp-server/src/toolProviders/debuggerTools.ts` (新建)
-*   **目标:** 创建一个单独的文件来存放调试器相关工具的实现逻辑，保持 `server.ts` 清洁。
-*   **内容:**
-    ```typescript
-    import * as fs from 'fs/promises'; // 使用 promises API
-    import * as path from 'path';
-    import { McpToolExtra } from '@modelcontextprotocol/sdk'; // 确认 SDK 是否导出此类型，若无则省略或自定义
-
-    // 定义期望的 launch.json 配置项结构 (至少包含必要的字段)
-    interface LaunchConfiguration {
-        name: string;
-        type: string;
-        request: string;
-        [key: string]: any; // 允许其他任意属性
-    }
-
-    // 定义期望的 launch.json 顶层结构
-    interface LaunchJson {
-        version?: string; // version 字段通常存在但可选
-        configurations: LaunchConfiguration[];
-    }
-
-    // 定义工具处理函数的类型 (如果 SDK 没有提供明确类型，可以自定义)
-    type GetDebuggerConfigurationsArgs = Record<string, never>; // 空对象表示无输入参数
-    type GetDebuggerConfigurationsResult =
-        | { status: 'success'; configurations: LaunchConfiguration[] }
-        | { status: 'error'; message: string };
-
-    /**
-     * 处理 get_debugger_configurations MCP 工具请求。
-     * 读取 VS Code 工作区的 .vscode/launch.json 文件并返回其配置。
-     * @param args - 工具输入参数 (空)。
-     * @param extra - MCP 工具附加信息 (未使用)。
-     * @returns 返回包含配置列表或错误信息的 Promise。
-     */
-    export async function handleGetDebuggerConfigurations(
-        args: GetDebuggerConfigurationsArgs,
-        extra: McpToolExtra // extra 参数包含 MCP 请求的附加信息，此工具当前未使用该信息
-    ): Promise<GetDebuggerConfigurationsResult> {
-        console.log('[MCP Server] Handling get_debugger_configurations request...');
-
-        const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
-
-        if (!workspacePath) {
-            const errorMsg = '无法获取 VS Code 工作区路径，请确保插件已正确设置 VSCODE_WORKSPACE_PATH 环境变量。';
-            console.error(`[MCP Server] Error: ${errorMsg}`);
-            return { status: 'error', message: errorMsg };
-        }
-        console.log(`[MCP Server] Workspace path received: ${workspacePath}`);
-
-        const launchJsonPath = path.join(workspacePath, '.vscode', 'launch.json');
-        console.log(`[MCP Server] Attempting to read launch.json from: ${launchJsonPath}`);
-
-        try {
-            const fileContent = await fs.readFile(launchJsonPath, 'utf-8');
-            console.log('[MCP Server] Successfully read launch.json content.');
-
-            try {
-                // 移除 JSON 文件开头的注释 (常见于 launch.json)
-                // 这是一个简单的实现，可能无法处理所有类型的注释，但能处理常见的 // 和 /* */
-                const jsonStringWithoutComments = fileContent.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
-                const parsedJson: unknown = JSON.parse(jsonStringWithoutComments);
-                console.log('[MCP Server] Successfully parsed launch.json content (after removing comments).');
-
-                // 类型守卫和结构验证
-                if (
-                    typeof parsedJson === 'object' &&
-                    parsedJson !== null &&
-                    'configurations' in parsedJson &&
-                    Array.isArray((parsedJson as LaunchJson).configurations)
-                ) {
-                    const launchJson = parsedJson as LaunchJson;
-
-                    // 过滤并提取所需信息, 确保 name, type, request 存在
-                    const validConfigurations = launchJson.configurations.filter(
-                        config => typeof config.name === 'string' && typeof config.type === 'string' && typeof config.request === 'string'
-                    );
-
-                    // 提取所有字段，符合 ProjectBrief 的可选要求
-                    const resultConfigurations = validConfigurations.map(config => ({ ...config }));
-
-
-                    console.log(`[MCP Server] Found ${resultConfigurations.length} valid configurations.`);
-                    return { status: 'success', configurations: resultConfigurations };
-                } else {
-                    const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
-                    console.error(`[MCP Server] Error: ${errorMsg}`);
-                    return { status: 'error', message: errorMsg };
-                }
-            } catch (parseError) {
-                if (parseError instanceof SyntaxError) {
-                    const errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
-                    console.error(`[MCP Server] Error parsing launch.json: ${errorMsg}`);
-                    return { status: 'error', message: errorMsg };
-                }
-                // 处理其他可能的解析错误
-                const errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
-                console.error(`[MCP Server] ${errorMsg}`);
-                // 对于未知错误，最好也返回给客户端
-                return { status: 'error', message: errorMsg };
-            }
-        } catch (readError: any) { // 使用 any 或 unknown 并进行检查
-            if (readError.code === 'ENOENT') {
-                // 文件或目录不存在
-                const errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
-                console.warn(`[MCP Server] ${errorMsg}`);
-                // 根据 ProjectBrief 定义，找不到文件是错误
-                return { status: 'error', message: errorMsg };
-            } else {
-                // 其他文件读取错误
-                const errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
-                console.error(`[MCP Server] Error reading launch.json: ${errorMsg}`);
-                return { status: 'error', message: errorMsg };
-            }
-        }
-    }
-    ```
-*   **注意:**
-    *   使用 `fs.promises` 进行异步文件读取。
-    *   添加了详细的 `console.log` 并带有 `[MCP Server]` 前缀以区分日志来源。
-    *   实现了更健壮的错误处理逻辑，包括环境变量检查、文件未找到、读取错误、JSON 解析错误（增加了注释移除逻辑）、结构验证失败。
-    *   对解析后的 `configurations` 数组中的每个配置项进行了基本验证（确保 `name`, `type`, `request` 存在且为字符串）。
-    *   返回格式严格遵循 `ProjectBrief.md` 4.1 节的定义。
-
-**3. 注册工具 (服务器端修改)**
-
-*   **文件:** `mcp-server/src/server.ts`
-*   **目标:** 导入新的处理函数并注册 `get_debugger_configurations` 工具。
-*   **修改点:** 在文件顶部导入，并在 `server.tool()` 调用区域添加注册逻辑。
-*   **实现:**
-    *   导入处理函数：
-      ```typescript
-      import { handleGetDebuggerConfigurations } from './toolProviders/debuggerTools'; // 确认路径相对于 server.ts 正确
-      ```
-    *   注册工具 (确保在 `server.listen()` 之前调用)：
-      ```typescript
-      // ... 其他 import 和 server 实例创建 ...
-
-      // 注册 Hello World 工具 (示例，保留或移除)
-      // server.tool('hello_world', {}, async (args, extra) => {
-      //     console.log('Handling hello_world request...');
-      //     return { status: 'success', message: 'Hello World from MCP Server!' };
-      // });
-      // console.log('[MCP Server] Registered tool: hello_world');
-
-      // 注册获取调试配置的工具
-      server.tool(
-          'get_debugger_configurations', // 工具名称，与 ProjectBrief 一致
-          {}, // 输入 Schema 为空对象，因为此工具无输入参数
-          handleGetDebuggerConfigurations // 指定处理函数
-      );
-      console.log('[MCP Server] Registered tool: get_debugger_configurations');
-
-      // ... 启动服务器逻辑 (server.listen) ...
-      ```
-*   **注意:** 确保导入路径正确。添加日志确认工具已注册。
-
-**4. 测试**
-
-*   **准备:**
-    *   在你的 VS Code 工作区中创建 `.vscode/launch.json` 文件，包含不同类型的配置项（包括格式正确和可能格式错误的）。
-    *   可以创建一个没有 `.vscode` 文件夹或 `launch.json` 的工作区用于测试文件未找到的情况。
-*   **执行:**
-    *   重新构建并运行 VS Code 插件 (`npm run compile` & F5)。
-    *   观察 VS Code 的 "输出" 面板 (选择 "Debug-MCP" 或 "Extension Host") 和 MCP 服务器的控制台日志。
-    *   确保插件端成功获取并传递了工作区路径。
-    *   确保服务器端成功启动并注册了 `get_debugger_configurations` 工具。
-    *   使用 MCP 客户端 (如 Cline) 连接到服务器。
-    *   调用 `get_debugger_configurations` 工具。
-*   **验证场景:**
-    *   **场景 1: `launch.json` 存在且格式正确:**
-        *   预期客户端收到 `status: "success"` 和包含正确配置信息的 `configurations` 数组。
-        *   检查服务器日志，确认读取和解析成功。
-    *   **场景 2: `.vscode` 目录或 `launch.json` 文件不存在:**
-        *   预期客户端收到 `status: "error"` 和类似 "无法找到 launch.json 文件" 的 `message`。
-        *   检查服务器日志，确认捕获到 `ENOENT` 错误。
-    *   **场景 3: `launch.json` 存在但 JSON 格式错误 (例如，缺少逗号):**
-        *   预期客户端收到 `status: "error"` 和包含 `SyntaxError` 信息的 `message`。
-        *   检查服务器日志，确认捕获到 `SyntaxError`。
-    *   **场景 4: `launch.json` 存在且 JSON 有效，但缺少 `configurations` 数组或其结构不正确:**
-        *   预期客户端收到 `status: "error"` 和类似 "缺少有效的 'configurations' 数组" 的 `message`。
-        *   检查服务器日志，确认结构验证失败。
-    *   **场景 5: (可选) 插件未能传递 `VSCODE_WORKSPACE_PATH` 环境变量:**
-        *   预期客户端收到 `status: "error"` 和关于环境变量未设置的 `message`。
-        *   检查服务器日志，确认捕获到环境变量缺失的错误。
-
-**总结:**
-
-该规划提供了实现 `get_debugger_configurations` 工具的详细步骤，涵盖了插件端和服务器端的修改。重点在于正确传递工作区路径、健壮的文件读取与解析、严格的错误处理以及遵循项目规范。通过创建独立的 provider 文件提高了代码的可维护性。详细的日志记录和测试场景有助于确保功能的正确性和稳定性。
+完成上述修改后，`set_breakpoint` 工具的实现将更符合规划和规范。

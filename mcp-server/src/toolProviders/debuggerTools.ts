@@ -1,9 +1,14 @@
 import * as fs from 'fs/promises'; // 使用 promises API
 import * as path from 'path';
+import { z } from 'zod'; // 导入 zod
+import { sendRequestToPlugin, PluginResponse } from '../pluginCommunicator'; // 导入 IPC 通信函数和类型
+
 // import { McpToolExtra } from '@modelcontextprotocol/sdk'; // 确认 SDK 是否导出此类型，若无则省略或自定义
- 
- // 定义期望的 launch.json 配置项结构 (至少包含必要的字段)
- interface LaunchConfiguration {
+
+// --- get_debugger_configurations 相关定义 ---
+
+// 定义期望的 launch.json 配置项结构 (至少包含必要的字段)
+interface LaunchConfiguration {
     name: string;
     type: string;
     request: string;
@@ -16,31 +21,28 @@ interface LaunchJson {
     configurations: LaunchConfiguration[];
 }
 
-// 定义工具处理函数的类型 (如果 SDK 没有提供明确类型，可以自定义)
+// 定义 get_debugger_configurations 工具处理函数的类型
 type GetDebuggerConfigurationsArgs = Record<string, never>; // 空对象表示无输入参数
 type GetDebuggerConfigurationsResult =
-    | { status: 'success'; content: { type: "text", text: string }[] } // 修改成功时的返回值类型，包含 content
-    | { status: 'error'; message: string; content: { type: "text", text: string }[]; isError: true }; // 修改错误时的返回值类型，包含 content 和 isError
+    | { status: 'success'; content: { type: "text", text: string }[] }
+    | { status: 'error'; message: string; content: { type: "text", text: string }[]; isError: true };
 
 /**
  * 处理 get_debugger_configurations MCP 工具请求。
  * 读取 VS Code 工作区的 .vscode/launch.json 文件并返回其配置。
- * @param args - 工具输入参数 (空)。
- * @param extra - MCP 工具附加信息 (未使用)。
-  * @returns 返回包含配置列表或错误信息的 Promise。
-  */
- export async function handleGetDebuggerConfigurations(
-     args: GetDebuggerConfigurationsArgs,
-     extra: any // extra 参数包含 MCP 请求的附加信息，此工具当前未使用该信息
- ): Promise<GetDebuggerConfigurationsResult> {
-     console.log('[MCP Server] Handling get_debugger_configurations request...');
+ */
+export async function handleGetDebuggerConfigurations(
+    args: GetDebuggerConfigurationsArgs,
+    extra: any
+): Promise<GetDebuggerConfigurationsResult> {
+    console.log('[MCP Server] Handling get_debugger_configurations request...');
 
     const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
 
     if (!workspacePath) {
         const errorMsg = '无法获取 VS Code 工作区路径，请确保插件已正确设置 VSCODE_WORKSPACE_PATH 环境变量。';
         console.error(`[MCP Server] Error: ${errorMsg}`);
-        return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+        return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
     }
     console.log(`[MCP Server] Workspace path received: ${workspacePath}`);
 
@@ -52,13 +54,10 @@ type GetDebuggerConfigurationsResult =
         console.log('[MCP Server] Successfully read launch.json content.');
 
         try {
-            // 移除 JSON 文件开头的注释 (常见于 launch.json)
-            // 这是一个简单的实现，可能无法处理所有类型的注释，但能处理常见的 // 和 /* */
             const jsonStringWithoutComments = fileContent.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
             const parsedJson: unknown = JSON.parse(jsonStringWithoutComments);
             console.log('[MCP Server] Successfully parsed launch.json content (after removing comments).');
 
-            // 类型守卫和结构验证
             if (
                 typeof parsedJson === 'object' &&
                 parsedJson !== null &&
@@ -66,49 +65,151 @@ type GetDebuggerConfigurationsResult =
                 Array.isArray((parsedJson as LaunchJson).configurations)
             ) {
                 const launchJson = parsedJson as LaunchJson;
-
-                // 过滤并提取所需信息, 确保 name, type, request 存在
                 const validConfigurations = launchJson.configurations.filter(
                     config => typeof config.name === 'string' && typeof config.type === 'string' && typeof config.request === 'string'
                 );
-
-                // 提取所有字段，符合 ProjectBrief 的可选要求
                 const resultConfigurations = validConfigurations.map(config => ({ ...config }));
 
-
                 console.log(`[MCP Server] Found ${resultConfigurations.length} valid configurations.`);
-                // 将配置信息转换为文本格式，放入 content 属性
                 const configurationsText = JSON.stringify(resultConfigurations, null, 2);
                 return { status: 'success', content: [{ type: "text", text: configurationsText }] };
             } else {
                 const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
                 console.error(`[MCP Server] Error: ${errorMsg}`);
-                return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+                return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
             }
         } catch (parseError) {
             if (parseError instanceof SyntaxError) {
                 const errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
                 console.error(`[MCP Server] Error parsing launch.json: ${errorMsg}`);
-                return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+                return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
             }
-            // 处理其他可能的解析错误
             const errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
             console.error(`[MCP Server] ${errorMsg}`);
-            // 对于未知错误，最好也返回给客户端
-            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
         }
-    } catch (readError: any) { // 使用 any 或 unknown 并进行检查
+    } catch (readError: any) {
         if (readError.code === 'ENOENT') {
-            // 文件或目录不存在
             const errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
             console.warn(`[MCP Server] ${errorMsg}`);
-            // 根据 ProjectBrief 定义，找不到文件是错误
-            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
         } else {
-            // 其他文件读取错误
             const errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
             console.error(`[MCP Server] Error reading launch.json: ${errorMsg}`);
-            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 添加 content 和 isError
+            return { status: 'error', message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
         }
     }
 }
+
+// --- set_breakpoint 相关定义 ---
+
+// 定义 set_breakpoint 工具的输入参数 Schema (使用 Zod)
+export const setBreakpointSchema = z.object({
+    file_path: z.string().min(1, "File path cannot be empty."),
+    line_number: z.number().int().positive("Line number must be a positive integer."),
+    column_number: z.number().int().positive("Column number must be a positive integer.").optional(),
+    condition: z.string().optional(),
+    hit_condition: z.string().optional(),
+    log_message: z.string().optional(),
+});
+
+// 从 Schema 推断输入参数类型
+export type SetBreakpointArgs = z.infer<typeof setBreakpointSchema>;
+
+// 定义 set_breakpoint 工具的返回值类型 (符合 MCP SDK 要求)
+// 注意：不再导出 SetBreakpointResult，直接在函数签名中使用 SDK 期望的类型
+type SetBreakpointResult =
+    | { status: 'success'; content: { type: "text", text: string }[] } // 成功时返回 breakpoint 信息的 JSON 字符串
+    | { status: 'error'; message: string; content: { type: "text", text: string }[]; isError: true }; // 失败时返回错误信息
+
+/**
+ * 处理 set_breakpoint MCP 工具请求。
+ * 向 VS Code 插件发送请求以设置断点。
+ */
+export async function handleSetBreakpoint(
+    args: SetBreakpointArgs, // 恢复为 SetBreakpointArgs 类型
+    extra: any
+): Promise<SetBreakpointResult> {
+    console.log('[MCP Server] Handling set_breakpoint request...');
+
+    // 参数校验由 MCP SDK 使用 setBreakpointSchema 完成。
+
+    try {
+        // 调用 pluginCommunicator 向插件发送设置断点请求
+        // 'setBreakpoint' 是自定义的命令字符串，需要与插件端监听的命令一致
+        // 使用 type 字段（pluginCommunicator 内部会映射到 command），并直接传递 args 作为 payload
+        const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: 'setBreakpoint', payload: args });
+
+        if (pluginResponse.status === 'success' && pluginResponse.payload && pluginResponse.payload.breakpoint) {
+            // 插件成功设置断点并返回信息
+            console.log('[MCP Server] Successfully set breakpoint via plugin.');
+            // 确保返回的 breakpoint 结构符合预期
+            const resultBreakpoint = pluginResponse.payload.breakpoint;
+            if (
+                typeof resultBreakpoint === 'object' && resultBreakpoint !== null &&
+                'verified' in resultBreakpoint && typeof resultBreakpoint.verified === 'boolean' &&
+                'source' in resultBreakpoint && typeof resultBreakpoint.source === 'object' && resultBreakpoint.source !== null && 'path' in resultBreakpoint.source && typeof resultBreakpoint.source.path === 'string' &&
+                'line' in resultBreakpoint && typeof resultBreakpoint.line === 'number' &&
+                'timestamp' in resultBreakpoint && typeof resultBreakpoint.timestamp === 'string'
+                // id, column, message 是可选的，不强制检查类型，但要确保存在时传递
+            ) {
+                 // 构造符合 SDK 要求的成功响应
+                 const breakpointInfo = {
+                     id: resultBreakpoint.id, // 可能为 undefined
+                     verified: resultBreakpoint.verified,
+                     source: { path: resultBreakpoint.source.path },
+                     line: resultBreakpoint.line,
+                     column: resultBreakpoint.column, // 可能为 undefined
+                     message: resultBreakpoint.message, // 可能为 undefined
+                     timestamp: resultBreakpoint.timestamp
+                 };
+                 const successText = JSON.stringify(breakpointInfo, null, 2);
+                 return {
+                     status: "success",
+                     content: [{ type: "text", text: successText }]
+                 };
+             } else {
+                 // 插件返回的 payload.breakpoint 结构不符合预期
+                 const errorMessage = 'Plugin returned breakpoint data in an unexpected format.';
+                 console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload.breakpoint);
+                 return {
+                     status: "error",
+                     message: errorMessage,
+                     content: [{ type: "text", text: errorMessage }],
+                     isError: true
+                 };
+             }
+         } else if (pluginResponse.status === 'error') {
+             // 插件返回失败状态
+             const errorMessage = pluginResponse.error?.message || 'Plugin failed to set breakpoint with an unspecified error.';
+             console.error(`[MCP Server] Plugin reported error setting breakpoint: ${errorMessage}`);
+             return {
+                 status: "error",
+                 message: errorMessage, // 使用提取的字符串消息
+                 content: [{ type: "text", text: errorMessage }], // 使用提取的字符串消息
+                 isError: true
+             };
+         } else {
+              // 插件返回成功但 payload 结构不正确
+              const errorMessage = 'Plugin returned success but payload format was unexpected.';
+              console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload);
+              return {
+                  status: "error",
+                  message: errorMessage,
+                  content: [{ type: "text", text: errorMessage }],
+                  isError: true
+              };
+         }
+
+     } catch (error: any) {
+         // IPC 通信失败 (例如超时) 或其他意外错误
+         const errorMessage = error?.message || "Failed to set breakpoint due to communication error or unexpected issue.";
+         console.error(`[MCP Server] Error setting breakpoint: ${errorMessage}`);
+         return {
+             status: "error",
+             message: errorMessage, // 使用提取的字符串消息
+             content: [{ type: "text", text: errorMessage }], // 使用提取的字符串消息
+             isError: true
+         };
+     }
+ }

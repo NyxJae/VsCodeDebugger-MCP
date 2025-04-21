@@ -6,9 +6,11 @@ import express, { Request, Response } from "express"; // 导入 express
 import http from 'http'; // 导入 http 模块以获取 Server 类型
 
 // 导入新的工具处理函数
-import { handleGetDebuggerConfigurations } from './toolProviders/debuggerTools';
+import { handleGetDebuggerConfigurations, handleSetBreakpoint, setBreakpointSchema } from './toolProviders/debuggerTools'; // 导入 handleSetBreakpoint 和 setBreakpointSchema
+// 导入 pluginCommunicator 相关函数和接口
+import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
 
-// import { z } from "zod"; // Zod is not strictly needed for the simple helloWorld tool without schema validation
+import { z } from "zod"; // 确保 Zod 已导入
 // import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/server/types.js"; // Attempt to import if needed, otherwise use 'any'
 
 // 端口配置
@@ -61,6 +63,14 @@ server.tool(
     handleGetDebuggerConfigurations // 指定处理函数
 );
 logger.info('[MCP Server] Registered tool: get_debugger_configurations'); // 添加日志
+
+// 注册设置断点的工具
+server.tool(
+    'set_breakpoint', // 工具名称
+    setBreakpointSchema.shape, // 传入 Zod Schema 的 shape (恢复原状以匹配 SDK 签名)
+    handleSetBreakpoint // 指定处理函数
+);
+logger.info('[MCP Server] Registered tool: set_breakpoint'); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {
@@ -164,7 +174,7 @@ async function main() {
         }
         const listenUrl = `http://localhost:${actualPort}`;
 
-        // **重要:** 标准输出，用于插件捕获实际监听地址
+        // **重要:** 标准输出，用于插件捕获实际监听地址,其输出内容不要修改
         console.log(`MCP Server listening on port ${actualPort}`);
 
         // 标准错误输出，用于日志记录
@@ -233,5 +243,25 @@ process.on('uncaughtException', (error) => {
   process.exit(1); // Uncaught exceptions should usually cause an exit
 });
 
+
+// 监听来自插件的消息
+process.on('message', (message: any) => {
+    // 检查消息是否符合更新后的 PluginResponse 接口的结构
+    if (
+        message &&
+        typeof message === 'object' &&
+        message.type === 'response' && // 检查 type 字段
+        typeof message.requestId === 'string' && // 检查 requestId 字段
+        (message.status === 'success' || message.status === 'error') // 检查 status 字段
+        // payload 和 error 是可选的，不强制检查
+    ) {
+        // 确认消息结构符合 PluginResponse，然后处理
+        handlePluginResponse(message as PluginResponse);
+    } else {
+        // 记录接收到未知结构的消息
+        logger.warn(`[MCP Server] Received unexpected message structure via IPC:`, message);
+    }
+    // 可以添加其他类型的消息处理逻辑
+});
 
 main(); // Call the main function to start the server
