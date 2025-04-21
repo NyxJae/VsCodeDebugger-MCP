@@ -6,7 +6,11 @@ import express, { Request, Response } from "express"; // 导入 express
 import http from 'http'; // 导入 http 模块以获取 Server 类型
 
 // 导入新的工具处理函数
-import { handleGetDebuggerConfigurations, handleSetBreakpoint, setBreakpointSchema } from './toolProviders/debuggerTools'; // 导入 handleSetBreakpoint 和 setBreakpointSchema
+import {
+    handleGetDebuggerConfigurations,
+    handleSetBreakpoint, setBreakpointSchema,
+    handleGetBreakpoints, getBreakpointsSchema // 导入 get_breakpoints 相关
+} from './toolProviders/debuggerTools';
 // 导入 pluginCommunicator 相关函数和接口
 import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
 
@@ -71,6 +75,14 @@ server.tool(
     handleSetBreakpoint // 指定处理函数
 );
 logger.info('[MCP Server] Registered tool: set_breakpoint'); // 添加日志
+
+// 注册获取所有断点的工具
+server.tool(
+    'get_breakpoints', // 工具名称
+    getBreakpointsSchema.shape, // 输入 Schema (空对象)
+    handleGetBreakpoints // 指定处理函数
+);
+logger.info('[MCP Server] Registered tool: get_breakpoints'); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {

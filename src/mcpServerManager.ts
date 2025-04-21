@@ -271,6 +271,59 @@ export class McpServerManager implements vscode.Disposable {
                             this.outputChannel.appendLine(`[IPC Error] Failed to set breakpoint for request ${requestId}: ${error.message}`);
                             this.sendResponseToServer(requestId, 'error', undefined, { message: `Failed to set breakpoint: ${error.message}` });
                         }
+                    } else if (message?.type === 'request' && message.command === 'getBreakpoints') {
+                        // --- 新增：处理 getBreakpoints 请求 ---
+                        const { requestId } = message;
+                        try {
+                            console.log(`[Plugin] Received getBreakpoints request (ID: ${requestId}) from MCP server.`);
+                            this.outputChannel.appendLine(`[IPC] Received getBreakpoints request (ID: ${requestId})`);
+
+                            const vscodeBreakpoints = vscode.debug.breakpoints;
+                            const formattedBreakpoints = vscodeBreakpoints.map(bp => {
+                                let source: { path: string } | null = null;
+                                let line: number | null = null;
+                                let column: number | null = null;
+
+                                // 检查断点是否为 SourceBreakpoint，只有它才有 location
+                                if (bp instanceof vscode.SourceBreakpoint) {
+                                    source = { path: bp.location.uri.fsPath };
+                                    line = bp.location.range.start.line + 1; // 1-based
+                                    column = bp.location.range.start.character + 1; // 1-based
+                                }
+                                // 对于 FunctionBreakpoint 或其他类型，source/line/column 保持 null
+
+                                // 注意: ProjectBrief.md 中的 'verified' 指调试器是否验证成功。
+                                // vscode.Breakpoint 没有直接的 'verified' 状态。
+                                // 这里使用 'enabled' (用户是否启用断点) 作为近似值。
+                                const verified = bp.enabled;
+
+                                return {
+                                    id: bp.id, // id 是 string 类型
+                                    verified: verified,
+                                    source: source,
+                                    line: line,
+                                    column: column,
+                                    condition: bp.condition || undefined, // 确保 undefined 而不是空字符串
+                                    hit_condition: bp.hitCondition || undefined, // 确保 undefined 而不是空字符串
+                                    log_message: bp.logMessage || undefined, // 确保 undefined 而不是空字符串
+                                };
+                            });
+
+                            const responsePayload = {
+                                status: 'success', // 嵌套一层 status，与 setBreakpoint 保持一致？不，直接放顶层
+                                timestamp: new Date().toISOString(), // ISO 8601 UTC
+                                breakpoints: formattedBreakpoints,
+                            };
+
+                            console.log(`[Plugin] Sending ${formattedBreakpoints.length} breakpoints to MCP server for request ${requestId}.`);
+                            this.sendResponseToServer(requestId, 'success', responsePayload);
+
+                        } catch (error: any) {
+                            console.error(`[Plugin] Failed to get breakpoints for request ${requestId}: ${error.message}`);
+                            this.outputChannel.appendLine(`[IPC Error] Failed to get breakpoints for request ${requestId}: ${error.message}`);
+                            this.sendResponseToServer(requestId, 'error', undefined, { message: `Failed to get breakpoints: ${error.message}` });
+                        }
+                        // --- 结束：处理 getBreakpoints 请求 ---
                     } else {
                         // 处理未知或非预期的消息
                         console.warn('[Plugin] Received unknown IPC message type or command:', message);
@@ -404,7 +457,7 @@ export class McpServerManager implements vscode.Disposable {
                 prompt: `请输入一个新的端口号 (1025-65535)，当前端口 ${occupiedPort} 被占用。`,
                 placeHolder: '例如: 6010',
                 validateInput: (value) => {
-                    if (!value) return '端口号不能为空。';
+                    if (!value) {return '端口号不能为空。';}
                     if (!isValidPort(value)) {
                         return '请输入 1025 到 65535 之间的有效端口号。';
                     }
