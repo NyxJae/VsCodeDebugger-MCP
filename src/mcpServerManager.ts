@@ -133,7 +133,14 @@ export class McpServerManager implements vscode.Disposable {
                     if (message?.type === 'request' && message.command === 'setBreakpoint') {
                         const { requestId, payload } = message;
                         try {
-                            const { filePath, lineNumber, columnNumber, condition, hitCondition, logMessage } = payload;
+                            const {
+                                file_path: filePath,      // 将 snake_case 映射到 camelCase
+                                line_number: lineNumber,    // 将 snake_case 映射到 camelCase
+                                column_number: columnNumber, // 可选参数，同样处理
+                                condition,                 // 如果命名一致则无需映射
+                                hit_condition: hitCondition, // 将 snake_case 映射到 camelCase
+                                log_message: logMessage     // 将 snake_case 映射到 camelCase
+                            } = payload;
 
                             // 基本参数校验
                             if (!filePath || typeof lineNumber !== 'number' || lineNumber <= 0) {
