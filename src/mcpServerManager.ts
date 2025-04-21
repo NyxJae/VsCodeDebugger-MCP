@@ -148,77 +148,122 @@ export class McpServerManager implements vscode.Disposable {
                             }
 
                             const uri = vscode.Uri.file(filePath);
+                            const absoluteFilePath = uri.fsPath; // 获取绝对路径用于比较
                             // 行号在 VS Code API 中是 0-based，用户提供的是 1-based
                             const zeroBasedLine = lineNumber - 1;
-                            const zeroBasedColumn = columnNumber ? columnNumber - 1 : 0; // 列号也是 0-based，如果提供的话
-                            const position = new vscode.Position(zeroBasedLine, zeroBasedColumn);
-                            const location = new vscode.Location(uri, position);
+                            // 列号也是 0-based，如果未提供则为 undefined
+                            const zeroBasedColumn = (typeof columnNumber === 'number' && columnNumber > 0) ? columnNumber - 1 : undefined;
 
-                            const breakpoint = new vscode.SourceBreakpoint(
-                                location,
-                                true, // enabled
-                                condition,
-                                hitCondition,
-                                logMessage
-                            );
+                            // --- 先查：查找现有断点 ---
+                            const existingBreakpoints = vscode.debug.breakpoints;
+                            const existingBp = existingBreakpoints.find(bp => {
+                                if (!(bp instanceof vscode.SourceBreakpoint)) {
+                                    return false;
+                                }
+                                const bpLocation = bp.location;
+                                // 比较文件路径 (绝对路径)
+                                if (bpLocation.uri.fsPath !== absoluteFilePath) {
+                                    return false;
+                                }
+                                // 比较行号 (0-based)
+                                if (bpLocation.range.start.line !== zeroBasedLine) {
+                                    return false;
+                                }
+                                // 比较列号 (0-based, 仅当请求中提供了有效的列号时)
+                                if (zeroBasedColumn !== undefined) {
+                                    return bpLocation.range.start.character === zeroBasedColumn;
+                                }
+                                // 如果请求未提供列号，则仅匹配文件和行即可
+                                return true;
+                            }) as vscode.SourceBreakpoint | undefined;
 
-                            // 调用 VS Code API 设置断点
-                            await vscode.debug.addBreakpoints([breakpoint]);
-                            this.outputChannel.appendLine(`[IPC] Added breakpoint via API for request ${requestId}`);
+                            if (existingBp) {
+                                // --- 如果找到，复用现有断点 ---
+                                this.outputChannel.appendLine(`[IPC] Found existing breakpoint at location for request ${requestId}. Reusing ID: ${existingBp.id}`);
+                                const responsePayload = {
+                                    breakpoint: {
+                                        id: existingBp.id, // 使用现有 ID
+                                        verified: false, // 保持 false, 依赖后续事件更新
+                                        source: { path: filePath },
+                                        line: lineNumber, // 返回 1-based 行号
+                                        column: columnNumber, // 返回请求的列号 (1-based)
+                                        message: "Reused existing breakpoint at this location.", // 添加提示信息
+                                        timestamp: new Date().toISOString() // 生成当前时间戳
+                                    }
+                                };
+                                this.sendResponseToServer(requestId, 'success', responsePayload);
 
-                            // --- 获取断点 ID (折中方案) ---
-                            // addBreakpoints 不直接返回 ID，立即查询 breakpoints 列表
-                            // 延迟一小段时间再查询，给 VS Code 一点时间更新内部列表
-                            await new Promise(resolve => setTimeout(resolve, 100)); // e.g., 100ms delay
-
-                            const currentBreakpoints = vscode.debug.breakpoints;
-                            this.outputChannel.appendLine(`[IPC] Current breakpoints count after add: ${currentBreakpoints.length}`);
-
-                            // 查找与刚添加的位置精确匹配的断点
-                            const addedBp = currentBreakpoints.find(bp =>
-                                bp instanceof vscode.SourceBreakpoint &&
-                                bp.location.uri.fsPath === uri.fsPath &&
-                                bp.location.range.start.line === zeroBasedLine &&
-                                bp.location.range.start.character === zeroBasedColumn // 尝试匹配列号
-                            ) as vscode.SourceBreakpoint | undefined;
-
-                            let breakpointId: string | undefined = addedBp?.id;
-                            let bpMessage: string;
-
-                            if (breakpointId) {
-                                bpMessage = "Breakpoint added, verification pending.";
-                                this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID: ${breakpointId}`);
                             } else {
-                                // 如果精确匹配失败，尝试只匹配行号（作为备选方案）
-                                const addedBpFallback = currentBreakpoints
-                                    .filter(bp => bp instanceof vscode.SourceBreakpoint &&
-                                                  bp.location.uri.fsPath === uri.fsPath &&
-                                                  bp.location.range.start.line === zeroBasedLine)
-                                    .pop() as vscode.SourceBreakpoint | undefined; // 取最后一个匹配行的
+                                // --- 如果没找到，执行添加逻辑 ---
+                                this.outputChannel.appendLine(`[IPC] No existing breakpoint found at location for request ${requestId}. Adding new one.`);
+                                // 如果请求未提供列号，VS Code 通常在行的开头添加断点 (列 0)
+                                const position = new vscode.Position(zeroBasedLine, zeroBasedColumn ?? 0);
+                                const location = new vscode.Location(uri, position);
 
-                                breakpointId = addedBpFallback?.id;
+                                const breakpoint = new vscode.SourceBreakpoint(
+                                    location,
+                                    true, // enabled
+                                    condition,
+                                    hitCondition,
+                                    logMessage
+                                );
+
+                                // 调用 VS Code API 设置断点
+                                await vscode.debug.addBreakpoints([breakpoint]);
+                                this.outputChannel.appendLine(`[IPC] Added breakpoint via API for request ${requestId}`);
+
+                                // --- 获取断点 ID (保持现有逻辑，但基于添加时的位置查找) ---
+                                await new Promise(resolve => setTimeout(resolve, 100)); // e.g., 100ms delay
+
+                                const currentBreakpoints = vscode.debug.breakpoints;
+                                this.outputChannel.appendLine(`[IPC] Current breakpoints count after add: ${currentBreakpoints.length}`);
+
+                                // 查找与刚添加的位置精确匹配的断点 (使用添加时的列号 zeroBasedColumn ?? 0)
+                                const addedBp = currentBreakpoints.find(bp =>
+                                    bp instanceof vscode.SourceBreakpoint &&
+                                    bp.location.uri.fsPath === uri.fsPath &&
+                                    bp.location.range.start.line === zeroBasedLine &&
+                                    bp.location.range.start.character === (zeroBasedColumn ?? 0) // 匹配添加时使用的列
+                                ) as vscode.SourceBreakpoint | undefined;
+
+                                let breakpointId: string | undefined = addedBp?.id;
+                                let bpMessage: string;
+
                                 if (breakpointId) {
-                                    bpMessage = "Breakpoint added (ID found by line match), verification pending.";
-                                    this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID by line: ${breakpointId}`);
+                                    bpMessage = "Breakpoint added, verification pending.";
+                                    this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID: ${breakpointId}`);
                                 } else {
-                                    bpMessage = "Breakpoint added (ID unavailable immediately), verification pending.";
-                                    this.outputChannel.appendLine(`[IPC] Could not find matching breakpoint ID immediately.`);
-                                }
-                            }
+                                    // 如果精确匹配失败，尝试只匹配行号（作为备选方案）
+                                    const addedBpFallback = currentBreakpoints
+                                        .filter(bp => bp instanceof vscode.SourceBreakpoint &&
+                                                      bp.location.uri.fsPath === uri.fsPath &&
+                                                      bp.location.range.start.line === zeroBasedLine)
+                                        .pop() as vscode.SourceBreakpoint | undefined; // 取最后一个匹配行的
 
-                            // --- 构造成功响应 ---
-                            const responsePayload = {
-                                breakpoint: {
-                                    id: breakpointId, // 可能为 undefined
-                                    verified: false, // API 限制，初始为 false
-                                    source: { path: filePath },
-                                    line: lineNumber, // 返回 1-based 行号
-                                    column: columnNumber, // 返回请求的列号 (1-based)
-                                    message: bpMessage,
-                                    timestamp: new Date().toISOString() // 生成时间戳
+                                    breakpointId = addedBpFallback?.id;
+                                    if (breakpointId) {
+                                        bpMessage = "Breakpoint added (ID found by line match), verification pending.";
+                                        this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID by line: ${breakpointId}`);
+                                    } else {
+                                        bpMessage = "Breakpoint added (ID unavailable immediately), verification pending.";
+                                        this.outputChannel.appendLine(`[IPC] Could not find matching breakpoint ID immediately.`);
+                                    }
                                 }
-                            };
-                            this.sendResponseToServer(requestId, 'success', responsePayload);
+
+                                // --- 构造成功响应 ---
+                                const responsePayload = {
+                                    breakpoint: {
+                                        id: breakpointId, // 可能为 undefined
+                                        verified: false, // API 限制，初始为 false
+                                        source: { path: filePath },
+                                        line: lineNumber, // 返回 1-based 行号
+                                        column: columnNumber, // 返回请求的列号 (1-based)
+                                        message: bpMessage,
+                                        timestamp: new Date().toISOString() // 生成时间戳
+                                    }
+                                };
+                                this.sendResponseToServer(requestId, 'success', responsePayload);
+                            }
 
                         } catch (error: any) {
                             // --- 构造失败响应 ---
