@@ -134,11 +134,43 @@ export async function handleSetBreakpoint(
 
     // 参数校验由 MCP SDK 使用 setBreakpointSchema 完成。
 
+    // --- 开始修改 ---
+    // 1. 获取并校验工作区路径
+    const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
+    if (!workspacePath) {
+        const errorMsg = '无法获取 VS Code 工作区路径 (VSCODE_WORKSPACE_PATH 环境变量未设置)。';
+        console.error(`[MCP Server] Error in handleSetBreakpoint: ${errorMsg}`);
+        return {
+            status: 'error',
+            message: errorMsg,
+            content: [{ type: "text", text: errorMsg }],
+            isError: true
+        };
+    }
+    console.log(`[MCP Server] Workspace path for breakpoint: ${workspacePath}`);
+
+    // 2. 解析文件路径
+    let absoluteFilePath = args.file_path; // 默认使用原始路径
+    if (!path.isAbsolute(args.file_path)) {
+        console.log(`[MCP Server] Resolving relative path: ${args.file_path} against workspace: ${workspacePath}`);
+        absoluteFilePath = path.resolve(workspacePath, args.file_path);
+        console.log(`[MCP Server] Resolved to absolute path: ${absoluteFilePath}`);
+    } else {
+        console.log(`[MCP Server] Path is already absolute: ${args.file_path}`);
+    }
+
+    // 3. 更新传递给插件的 payload
+    const payloadForPlugin = {
+        ...args, // 包含 line_number, column_number 等其他参数
+        file_path: absoluteFilePath // 使用解析后的绝对路径
+    };
+    // --- 结束修改 ---
+
     try {
         // 调用 pluginCommunicator 向插件发送设置断点请求
         // 'setBreakpoint' 是自定义的命令字符串，需要与插件端监听的命令一致
-        // 使用 type 字段（pluginCommunicator 内部会映射到 command），并直接传递 args 作为 payload
-        const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: 'setBreakpoint', payload: args });
+        // 使用 type 字段（pluginCommunicator 内部会映射到 command），并传递更新后的 payloadForPlugin
+        const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: 'setBreakpoint', payload: payloadForPlugin }); // 使用更新后的 payload
 
         if (pluginResponse.status === 'success' && pluginResponse.payload && pluginResponse.payload.breakpoint) {
             // 插件成功设置断点并返回信息
