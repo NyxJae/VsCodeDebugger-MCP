@@ -82,6 +82,14 @@ server.tool(
 );
 logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_GET_BREAKPOINTS}`); // 添加日志
 
+// 注册移除断点的工具
+server.tool(
+    Constants.TOOL_REMOVE_BREAKPOINT, // 使用常量
+    DebugTools.BaseRemoveBreakpointInputSchema.shape, // 使用基础 Schema 的 shape
+    DebugTools.handleRemoveBreakpoint // 指定处理函数
+);
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_REMOVE_BREAKPOINT}`); // 添加日志
+
 // 启动服务器 (使用 server.connect)
 async function main() {
   try {

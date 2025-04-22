@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { ProcessManager } from './processManager'; // 引入 ProcessManager
 import { DebuggerApiWrapper } from '../vscode/debuggerApiWrapper'; // 引入 DebuggerApiWrapper
-import { PluginRequest, PluginResponse } from '../types'; // 从共享文件导入
+import { PluginRequest, PluginResponse, RemoveBreakpointParams } from '../types'; // 从共享文件导入, 增加 RemoveBreakpointParams
 import * as Constants from '../constants'; // 导入常量
 
 /**
@@ -77,6 +77,17 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                         breakpoints: breakpoints,
                     };
                     this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, responsePayload);
+                    break;
+
+                case Constants.IPC_COMMAND_REMOVE_BREAKPOINT: // 新增处理 removeBreakpoint
+                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_REMOVE_BREAKPOINT}' request (ID: ${requestId})`);
+                    // 委托给 DebuggerApiWrapper
+                    const removeResult = await this.debuggerApiWrapper.removeBreakpoint(payload as RemoveBreakpointParams); // 类型断言
+                    if (removeResult.status === Constants.IPC_STATUS_SUCCESS) {
+                        this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, { message: removeResult.message });
+                    } else {
+                        this.sendResponseToServer(requestId, Constants.IPC_STATUS_ERROR, undefined, { message: removeResult.message || '移除断点失败' });
+                    }
                     break;
 
                 // 在这里添加对其他调试命令的处理...

@@ -1,4 +1,7 @@
 import * as vscode from 'vscode';
+import * as path from 'path'; // 1. 引入 Node.js path 模块
+import { RemoveBreakpointParams, SetBreakpointParams } from '../types'; // 导入类型
+import { IPC_STATUS_SUCCESS, IPC_STATUS_ERROR } from '../constants'; // 导入状态常量
 
 /**
  * 封装与 VS Code Debug API 的交互逻辑。
@@ -10,9 +13,9 @@ export class DebuggerApiWrapper {
      * @param payload 包含断点信息的对象，例如 { file_path, line_number, column_number?, condition?, hit_condition?, log_message? }
      * @returns 返回一个包含断点信息的 Promise 对象，格式符合 MCP 规范。
      */
-    public async addBreakpoint(payload: any): Promise<any> {
+    public async addBreakpoint(payload: SetBreakpointParams): Promise<{ breakpoint: any } | { error: { message: string } }> {
         const {
-            file_path: filePath,
+            file_path: filePath, // 已经是绝对路径
             line_number: lineNumber,
             column_number: columnNumber,
             condition,
@@ -20,124 +23,113 @@ export class DebuggerApiWrapper {
             log_message: logMessage
         } = payload;
 
-        // 基本参数校验
+        // 基本参数校验 (虽然 MCP Server 已做，这里做一层防护)
         if (!filePath || typeof lineNumber !== 'number' || lineNumber <= 0) {
-            throw new Error('Invalid setBreakpoint request payload: missing or invalid filePath or lineNumber.');
+            const errorMsg = 'Invalid setBreakpoint request payload: missing or invalid filePath or lineNumber.';
+            console.error(`[DebuggerApiWrapper] ${errorMsg}`);
+            return { error: { message: errorMsg } };
         }
 
-        const uri = vscode.Uri.file(filePath);
+        let uri: vscode.Uri;
+        try {
+            uri = vscode.Uri.file(filePath);
+        } catch (pathError: any) {
+            const errorMsg = `文件路径格式无效: ${filePath} (${pathError.message})`;
+            console.error(`[DebuggerApiWrapper] Error creating Uri from path "${filePath}":`, pathError);
+            return { error: { message: errorMsg } };
+        }
+
         const absoluteFilePath = uri.fsPath; // 获取绝对路径用于比较
-        // 行号在 VS Code API 中是 0-based，用户提供的是 1-based
         const zeroBasedLine = lineNumber - 1;
-        // 列号也是 0-based，如果未提供则为 undefined
         const zeroBasedColumn = (typeof columnNumber === 'number' && columnNumber > 0) ? columnNumber - 1 : undefined;
 
-        // --- 先查：查找现有断点 ---
-        const existingBreakpoints = vscode.debug.breakpoints;
-        const existingBp = existingBreakpoints.find(bp => {
-            if (!(bp instanceof vscode.SourceBreakpoint)) {
-                return false;
-            }
-            const bpLocation = bp.location;
-            // 比较文件路径 (绝对路径)
-            if (bpLocation.uri.fsPath !== absoluteFilePath) {
-                return false;
-            }
-            // 比较行号 (0-based)
-            if (bpLocation.range.start.line !== zeroBasedLine) {
-                return false;
-            }
-            // 比较列号 (0-based, 仅当请求中提供了有效的列号时)
-            if (zeroBasedColumn !== undefined) {
-                return bpLocation.range.start.character === zeroBasedColumn;
-            }
-            // 如果请求未提供列号，则仅匹配文件和行即可
-            return true;
-        }) as vscode.SourceBreakpoint | undefined;
-
-        if (existingBp) {
-            // --- 如果找到，复用现有断点 ---
-            console.log(`[DebuggerApiWrapper] Found existing breakpoint at location. Reusing ID: ${existingBp.id}`);
-            return {
-                breakpoint: {
-                    id: existingBp.id, // 使用现有 ID
-                    verified: false, // 保持 false, 依赖后续事件更新
-                    source: { path: filePath },
-                    line: lineNumber, // 返回 1-based 行号
-                    column: columnNumber, // 返回请求的列号 (1-based)
-                    message: "Reused existing breakpoint at this location.", // 添加提示信息
-                    timestamp: new Date().toISOString() // 生成当前时间戳
+        try {
+            // --- 先查：查找现有断点 ---
+            const existingBreakpoints = vscode.debug.breakpoints;
+            const existingBp = existingBreakpoints.find(bp => {
+                if (!(bp instanceof vscode.SourceBreakpoint)) {return false;}
+                const bpLocation = bp.location;
+                if (bpLocation.uri.fsPath !== absoluteFilePath) {return false;}
+                if (bpLocation.range.start.line !== zeroBasedLine) {return false;}
+                if (zeroBasedColumn !== undefined) {
+                    return bpLocation.range.start.character === zeroBasedColumn;
                 }
-            };
-        } else {
-            // --- 如果没找到，执行添加逻辑 ---
-            console.log(`[DebuggerApiWrapper] No existing breakpoint found at location. Adding new one.`);
-            // 如果请求未提供列号，VS Code 通常在行的开头添加断点 (列 0)
-            const position = new vscode.Position(zeroBasedLine, zeroBasedColumn ?? 0);
-            const location = new vscode.Location(uri, position);
+                return true; // 只匹配行
+            }) as vscode.SourceBreakpoint | undefined;
 
-            const breakpoint = new vscode.SourceBreakpoint(
-                location,
-                true, // enabled
-                condition,
-                hitCondition,
-                logMessage
-            );
-
-            // 调用 VS Code API 设置断点
-            await vscode.debug.addBreakpoints([breakpoint]);
-            console.log(`[DebuggerApiWrapper] Added breakpoint via API.`);
-
-            // --- 获取断点 ID (需要延迟以确保 API 更新) ---
-            await new Promise(resolve => setTimeout(resolve, 100)); // e.g., 100ms delay
-
-            const currentBreakpoints = vscode.debug.breakpoints;
-            console.log(`[DebuggerApiWrapper] Current breakpoints count after add: ${currentBreakpoints.length}`);
-
-            // 查找与刚添加的位置精确匹配的断点 (使用添加时的列号 zeroBasedColumn ?? 0)
-            const addedBp = currentBreakpoints.find(bp =>
-                bp instanceof vscode.SourceBreakpoint &&
-                bp.location.uri.fsPath === uri.fsPath &&
-                bp.location.range.start.line === zeroBasedLine &&
-                bp.location.range.start.character === (zeroBasedColumn ?? 0) // 匹配添加时使用的列
-            ) as vscode.SourceBreakpoint | undefined;
-
-            let breakpointId: string | undefined = addedBp?.id;
-            let bpMessage: string;
-
-            if (breakpointId) {
-                bpMessage = "Breakpoint added, verification pending.";
-                console.log(`[DebuggerApiWrapper] Found matching breakpoint ID: ${breakpointId}`);
+            if (existingBp) {
+                console.log(`[DebuggerApiWrapper] Found existing breakpoint at location. Reusing ID: ${existingBp.id}`);
+                return {
+                    breakpoint: {
+                        id: existingBp.id,
+                        verified: false, // 保持 false, 依赖后续事件更新
+                        source: { path: filePath },
+                        line: lineNumber,
+                        column: columnNumber,
+                        message: "Reused existing breakpoint at this location.",
+                        timestamp: new Date().toISOString()
+                    }
+                };
             } else {
-                // 如果精确匹配失败，尝试只匹配行号（作为备选方案）
-                const addedBpFallback = currentBreakpoints
-                    .filter(bp => bp instanceof vscode.SourceBreakpoint &&
-                                  bp.location.uri.fsPath === uri.fsPath &&
-                                  bp.location.range.start.line === zeroBasedLine)
-                    .pop() as vscode.SourceBreakpoint | undefined; // 取最后一个匹配行的
+                console.log(`[DebuggerApiWrapper] No existing breakpoint found at location. Adding new one.`);
+                const position = new vscode.Position(zeroBasedLine, zeroBasedColumn ?? 0);
+                const location = new vscode.Location(uri, position);
+                const breakpoint = new vscode.SourceBreakpoint(location, true, condition, hitCondition, logMessage);
 
-                breakpointId = addedBpFallback?.id;
+                await vscode.debug.addBreakpoints([breakpoint]);
+                console.log(`[DebuggerApiWrapper] Added breakpoint via API.`);
+
+                // --- 获取断点 ID (需要延迟以确保 API 更新) ---
+                await new Promise(resolve => setTimeout(resolve, 150)); // 稍微增加延迟
+
+                const currentBreakpoints = vscode.debug.breakpoints;
+                console.log(`[DebuggerApiWrapper] Current breakpoints count after add: ${currentBreakpoints.length}`);
+
+                const addedBp = currentBreakpoints.find(bp =>
+                    bp instanceof vscode.SourceBreakpoint &&
+                    bp.location.uri.fsPath === uri.fsPath &&
+                    bp.location.range.start.line === zeroBasedLine &&
+                    bp.location.range.start.character === (zeroBasedColumn ?? 0)
+                ) as vscode.SourceBreakpoint | undefined;
+
+                let breakpointId: string | undefined = addedBp?.id;
+                let bpMessage: string;
+
                 if (breakpointId) {
-                    bpMessage = "Breakpoint added (ID found by line match), verification pending.";
-                    console.log(`[DebuggerApiWrapper] Found matching breakpoint ID by line: ${breakpointId}`);
+                    bpMessage = "Breakpoint added, verification pending.";
+                    console.log(`[DebuggerApiWrapper] Found matching breakpoint ID: ${breakpointId}`);
                 } else {
-                    bpMessage = "Breakpoint added (ID unavailable immediately), verification pending.";
-                    console.log(`[DebuggerApiWrapper] Could not find matching breakpoint ID immediately.`);
+                    const addedBpFallback = currentBreakpoints
+                        .filter(bp => bp instanceof vscode.SourceBreakpoint &&
+                                      bp.location.uri.fsPath === uri.fsPath &&
+                                      bp.location.range.start.line === zeroBasedLine)
+                        .pop() as vscode.SourceBreakpoint | undefined;
+                    breakpointId = addedBpFallback?.id;
+                    if (breakpointId) {
+                        bpMessage = "Breakpoint added (ID found by line match), verification pending.";
+                        console.log(`[DebuggerApiWrapper] Found matching breakpoint ID by line: ${breakpointId}`);
+                    } else {
+                        bpMessage = "Breakpoint added (ID unavailable immediately), verification pending.";
+                        console.log(`[DebuggerApiWrapper] Could not find matching breakpoint ID immediately.`);
+                    }
                 }
-            }
 
-            // --- 构造成功响应 ---
-            return {
-                breakpoint: {
-                    id: breakpointId, // 可能为 undefined
-                    verified: false, // API 限制，初始为 false
-                    source: { path: filePath },
-                    line: lineNumber, // 返回 1-based 行号
-                    column: columnNumber, // 返回请求的列号 (1-based)
-                    message: bpMessage,
-                    timestamp: new Date().toISOString() // 生成时间戳
-                }
-            };
+                return {
+                    breakpoint: {
+                        id: breakpointId,
+                        verified: false,
+                        source: { path: filePath },
+                        line: lineNumber,
+                        column: columnNumber,
+                        message: bpMessage,
+                        timestamp: new Date().toISOString()
+                    }
+                };
+            }
+        } catch (error: any) {
+            const errorMsg = `添加断点时发生错误: ${error.message || '未知 VS Code API 错误'}`;
+            console.error('[DebuggerApiWrapper] Error adding breakpoint:', error);
+            return { error: { message: errorMsg } };
         }
     }
 
@@ -152,17 +144,13 @@ export class DebuggerApiWrapper {
             let line: number | null = null;
             let column: number | null = null;
 
-            // 检查断点是否为 SourceBreakpoint，只有它才有 location
             if (bp instanceof vscode.SourceBreakpoint) {
                 source = { path: bp.location.uri.fsPath };
                 line = bp.location.range.start.line + 1; // 1-based
                 column = bp.location.range.start.character + 1; // 1-based
             }
-            // 对于 FunctionBreakpoint 或其他类型，source/line/column 保持 null
 
-            // 注意: ProjectBrief.md 中的 'verified' 指调试器是否验证成功。
-            // vscode.Breakpoint 没有直接的 'verified' 状态。
-            // 这里使用 'enabled' (用户是否启用断点) 作为近似值。
+            // 使用 'enabled' 作为 'verified' 的近似值
             const verified = bp.enabled;
 
             return {
@@ -171,11 +159,118 @@ export class DebuggerApiWrapper {
                 source: source,
                 line: line,
                 column: column,
-                condition: bp.condition || undefined, // 确保 undefined 而不是空字符串
-                hit_condition: bp.hitCondition || undefined, // 确保 undefined 而不是空字符串
-                log_message: bp.logMessage || undefined, // 确保 undefined 而不是空字符串
+                condition: bp.condition || undefined,
+                hit_condition: bp.hitCondition || undefined,
+                log_message: bp.logMessage || undefined,
             };
         });
         return formattedBreakpoints;
+    }
+
+    /**
+     * 移除断点。
+     * @param params 包含移除条件的参数对象。
+     * @returns 返回操作结果。
+     */
+    async removeBreakpoint(params: RemoveBreakpointParams): Promise<{ status: typeof IPC_STATUS_SUCCESS | typeof IPC_STATUS_ERROR; message?: string }> {
+        const allBreakpoints = vscode.debug.breakpoints;
+        console.log(`[DebuggerApiWrapper] Received removeBreakpoint request with params:`, params);
+        console.log(`[DebuggerApiWrapper] Current total breakpoints: ${allBreakpoints.length}`);
+
+        try {
+            if (params.clear_all) {
+                if (allBreakpoints.length > 0) {
+                    console.log(`[DebuggerApiWrapper] Clearing all ${allBreakpoints.length} breakpoints.`);
+                    await vscode.debug.removeBreakpoints(allBreakpoints);
+                    return { status: IPC_STATUS_SUCCESS, message: '已清除所有断点。' };
+                } else {
+                    console.log(`[DebuggerApiWrapper] No active breakpoints to clear.`);
+                    return { status: IPC_STATUS_SUCCESS, message: '没有活动的断点可清除。' };
+                }
+            } else if (params.breakpoint_id !== undefined) {
+                const targetId = String(params.breakpoint_id); // VS Code API 使用 string ID
+                const breakpointToRemove = allBreakpoints.find(bp => bp.id === targetId);
+                if (breakpointToRemove) {
+                    console.log(`[DebuggerApiWrapper] Removing breakpoint by ID: ${targetId}`);
+                    await vscode.debug.removeBreakpoints([breakpointToRemove]);
+                    return { status: IPC_STATUS_SUCCESS, message: `已移除 ID 为 ${params.breakpoint_id} 的断点。` };
+                } else {
+                    console.log(`[DebuggerApiWrapper] Breakpoint with ID ${targetId} not found.`);
+                    return { status: IPC_STATUS_ERROR, message: `未找到 ID 为 ${params.breakpoint_id} 的断点。` };
+                }
+            } else if (params.location) {
+                const relativeFilePath = params.location.file_path; // 接收到的可能是相对路径
+                const targetLine = params.location.line_number; // 1-based
+                const zeroBasedTargetLine = targetLine - 1;
+
+                console.log(`[DebuggerApiWrapper] Attempting to remove breakpoint by location: ${relativeFilePath}:${targetLine}`);
+
+                // --- 解决方案核心：将相对路径转换为绝对路径 ---
+                let absoluteFilePath: string;
+                if (path.isAbsolute(relativeFilePath)) {
+                    // 如果已经是绝对路径，直接使用
+                    absoluteFilePath = relativeFilePath;
+                    console.log(`[DebuggerApiWrapper] Path "${relativeFilePath}" is already absolute.`);
+                } else {
+                    // 如果是相对路径，基于工作区根目录解析
+                    const workspaceFolders = vscode.workspace.workspaceFolders;
+                    if (!workspaceFolders || workspaceFolders.length === 0) {
+                        // 无法确定工作区，无法解析相对路径
+                        console.error('[DebuggerApiWrapper] Cannot resolve relative path: No workspace folder found.');
+                        return { status: IPC_STATUS_ERROR, message: '无法确定工作区根目录以解析相对路径。' };
+                    }
+                    // 通常使用第一个工作区文件夹作为根目录
+                    const workspaceRootUri = workspaceFolders[0].uri;
+                    // 使用 path.resolve 结合 workspaceFolder 的 fsPath 来构造绝对路径
+                    absoluteFilePath = path.resolve(workspaceRootUri.fsPath, relativeFilePath);
+                    console.log(`[DebuggerApiWrapper] Resolved relative path "${relativeFilePath}" to absolute path "${absoluteFilePath}" based on workspace root "${workspaceRootUri.fsPath}"`);
+                }
+                // --- 结束解决方案核心 ---
+
+
+                let targetUri: vscode.Uri;
+                try {
+                    // 2. 使用转换后的绝对路径创建 Uri
+                    targetUri = vscode.Uri.file(absoluteFilePath);
+                } catch (pathError: any) {
+                     console.error(`[DebuggerApiWrapper] Error creating Uri from absolute path "${absoluteFilePath}":`, pathError);
+                     // 报告错误时使用绝对路径
+                     return { status: IPC_STATUS_ERROR, message: `文件路径格式无效: ${absoluteFilePath} (${pathError.message})` };
+                }
+
+                console.log(`[DebuggerApiWrapper] Target URI for comparison: ${targetUri.toString()}, Target 0-based line: ${zeroBasedTargetLine}`);
+
+                const breakpointsToRemove = allBreakpoints.filter(bp => {
+                    if (bp instanceof vscode.SourceBreakpoint) {
+                        // 3. (推荐) 使用 fsPath 进行比较，更健壮
+                        const matchesPath = bp.location.uri.fsPath === targetUri.fsPath;
+                        const matchesLine = bp.location.range.start.line === zeroBasedTargetLine;
+                        // 可选：添加详细日志进行调试
+                        // console.log(`[DebuggerApiWrapper] Comparing BP URI: ${bp.location.uri.fsPath} (Type: ${typeof bp.location.uri.fsPath}) with Target URI: ${targetUri.fsPath} (Type: ${typeof targetUri.fsPath}) => ${matchesPath}`);
+                        // console.log(`[DebuggerApiWrapper] Comparing BP Line: ${bp.location.range.start.line} with Target Line: ${zeroBasedTargetLine} => ${matchesLine}`);
+                        return matchesPath && matchesLine;
+                    }
+                    return false;
+                });
+
+                if (breakpointsToRemove.length > 0) {
+                    console.log(`[DebuggerApiWrapper] Found ${breakpointsToRemove.length} breakpoints at location to remove.`);
+                    await vscode.debug.removeBreakpoints(breakpointsToRemove);
+                    // 4. 在返回消息中使用绝对路径
+                    return { status: IPC_STATUS_SUCCESS, message: `已移除位于 ${absoluteFilePath}:${targetLine} 的 ${breakpointsToRemove.length} 个断点。` };
+                } else {
+                    console.log(`[DebuggerApiWrapper] No breakpoints found at location ${absoluteFilePath}:${targetLine}.`);
+                    // 4. 在返回消息中使用绝对路径
+                    return { status: IPC_STATUS_ERROR, message: `在 ${absoluteFilePath}:${targetLine} 未找到断点。` };
+                }
+            } else {
+                // 参数校验已在 MCP 服务器端完成，理论上不会到这里
+                console.error('[DebuggerApiWrapper] Invalid removeBreakpoint parameters received after server validation.');
+                return { status: IPC_STATUS_ERROR, message: '无效的移除断点参数。' };
+            }
+        } catch (error: any) {
+            console.error('[DebuggerApiWrapper] Error removing breakpoints:', error);
+            return { status: IPC_STATUS_ERROR, message: `移除断点时发生错误: ${error.message || '未知 VS Code API 错误'}` };
+        }
     }
 }
