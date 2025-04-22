@@ -14,6 +14,7 @@ vscode 插件部分不需要 webview
 - [通用文档](Docs/Doc_Common.md) - 记录项目经验和收获
 - [变更日志](Docs/ChangeLog.md) - 记录项目版本变更历史
 - [@modelcontextprotocol/sdk文档](Docs/Doc_MCP_SDK.md) - MCP SDK使用说明和API参考
+- [项目结构文档](Docs/Doc_Project_Structure.md) - 描述项目结构和模块职责
 ## 当前整体需求
 1. 前端 管理MCP服务器
    1. 启动MCP服务器

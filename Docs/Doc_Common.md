@@ -4,43 +4,56 @@
 ## 项目代码文件概览
 以下是本项目中主要代码文件的作用和简要说明：
 
-### `src/extension.ts`
-- **作用:** VS Code 插件的入口文件，负责插件的生命周期管理（激活和停用）。
-- **主要功能:**
-    - 实例化 `StatusBarManager` 和 `McpServerManager`。
-    - 注册状态栏项点击命令，用于显示服务器操作菜单。
-    - 注册复制 MCP 配置命令。
-    - 将 manager 实例和命令添加到订阅中，以便在插件停用时自动清理资源。
+### VS Code 插件端 (`src/`)
 
-### `src/mcpServerManager.ts`
-- **作用:** 管理 MCP 服务器子进程的启动、停止和状态。
-- **主要功能:**
-    - 使用 `child_process` 模块启动和停止 MCP 服务器进程。
-    - 监听服务器进程的 `stdout` 和 `stderr`，捕获启动信息（如监听 URL）和错误。
-    - 根据服务器进程的状态更新 `StatusBarManager`。
-    - 提供复制 MCP 客户端配置到剪贴板的功能。
-    - 实现 `vscode.Disposable` 接口，确保在插件停用时停止服务器并清理资源。
+-   `src/extension.ts`:
+    -   **作用:** 插件的入口文件，负责插件的激活 (`activate`) 和去激活 (`deactivate`)。
+    -   **主要功能:** 在激活时，创建并协调各个管理器 (`ProcessManager`, `IpcHandler`, `StatusBarManager`, `DebuggerApiWrapper`, `ConfigManager`)。注册 VS Code 命令和事件监听器。
+-   `src/mcpServerManager.ts`:
+    -   **作用:** 插件端的核心协调器。
+    -   **主要功能:** 管理 MCP 服务器的生命周期，协调各个管理器之间的交互，处理来自 MCP 服务器的 IPC 请求。
+-   `src/managers/ProcessManager.ts`:
+    -   **作用:** 负责管理 MCP 服务器子进程的生命周期。
+    -   **主要功能:** 处理子进程的启动、停止、重启，监听子进程输出，处理端口占用检测和用户手动指定端口。
+-   `src/managers/IpcHandler.ts`:
+    -   **作用:** 负责处理插件与 MCP 服务器之间的 IPC 通信。
+    -   **主要功能:** 建立和维护 IPC 连接，接收服务器消息，转发 IPC 请求。
+-   `src/managers/StatusBarManager.ts`:
+    -   **作用:** 管理 VS Code 状态栏的显示。
+    -   **主要功能:** 根据服务器状态更新状态栏文本和图标，处理状态栏项点击事件。
+-   `src/configManager.ts`:
+    -   **作用:** 管理插件的配置项。
+    -   **主要功能:** 读取和写入持久化的用户配置（如端口号、自动启动设置）。
+-   `src/vscode/DebuggerApiWrapper.ts`:
+    -   **作用:** 封装 VS Code Debug API 的调用。
+    -   **主要功能:** 提供设置断点、获取断点等功能的抽象接口。
+-   `src/constants.ts`:
+    -   **作用:** 存放插件端使用的常量。
+-   `src/types.ts`:
+    -   **作用:** 存放插件端使用的 TypeScript 类型定义和接口。
 
-### `src/statusBarManager.ts`
-- **作用:** 管理 VS Code 状态栏中 MCP 服务器状态的显示和交互。
-- **主要功能:**
-    - 创建和更新状态栏项的文本、图标和提示信息，反映服务器的当前状态（停止、运行、启动中、错误）。
-    - 在服务器运行时显示监听端口号。
-    - 注册状态栏项的点击命令，触发显示服务器操作菜单。
-    - 更新 VS Code 的上下文键，以便根据服务器状态控制其他 UI 元素的可见性。
-    - 实现 `vscode.Disposable` 接口，释放状态栏项资源。
+### MCP 服务器端 (`mcp-server/src/`)
 
-### `mcp-server/src/server.ts`
-- **作用:** MCP 服务器的入口文件，使用 `@modelcontextprotocol/sdk` 实现 MCP 服务器功能。
-- **主要功能:**
-    - 使用 `express` 框架创建 HTTP 服务器。
-    - 配置 `/sse` 端点用于建立 SSE 连接。
-    - 配置 `/messages` 端点用于接收客户端 POST 消息。
-    - 使用 `SSEServerTransport` 处理 SSE 通信。
-    - 注册 MCP 工具（目前包含一个 `helloWorld` 工具）。
-    - 监听指定端口，并在成功监听后通过 `stdout` 输出监听地址。
-    - 处理进程信号（SIGINT, SIGTERM），实现优雅关闭 HTTP 服务器。
-    - 实现动态端口分配，如果默认端口被占用，尝试使用随机端口。
+-   `mcp-server/src/server.ts`:
+    -   **作用:** MCP 服务器的入口文件。
+    -   **主要功能:** 启动 MCP 服务器，注册 MCP 工具提供者，处理客户端请求。
+-   `mcp-server/src/toolProviders/debug/index.ts`:
+    -   **作用:** 调试工具组的聚合文件。
+    -   **主要功能:** 导入并导出所有具体的调试工具实现。
+-   `mcp-server/src/toolProviders/debug/getConfigurations.ts`:
+    -   **作用:** 实现获取调试配置的 MCP 工具。
+    -   **主要功能:** 读取 `.vscode/launch.json` 文件并返回配置列表。
+-   `mcp-server/src/toolProviders/debug/setBreakpoint.ts`:
+    -   **作用:** 实现设置断点的 MCP 工具。
+    -   **主要功能:** 通过 `pluginCommunicator` 调用插件端命令设置断点。
+-   `mcp-server/src/toolProviders/debug/getBreakpoints.ts`:
+    -   **作用:** 实现获取所有断点的 MCP 工具。
+    -   **主要功能:** 通过 `pluginCommunicator` 调用插件端命令获取断点列表。
+-   `mcp-server/src/pluginCommunicator.ts`:
+    -   **作用:** 负责 MCP 服务器与 VS Code 插件之间的通信。
+    -   **主要功能:** 用于服务器端通过 IPC 调用插件端提供的功能。
+-   `mcp-server/src/constants.ts`:
+    -   **作用:** 存放 MCP 服务器端使用的常量。
 
 ## 项目整体框架
 本项目主要包含两个部分：
@@ -49,17 +62,18 @@
     -   负责在 VS Code 环境中运行和管理 MCP 服务器。
     -   提供用户界面交互，如状态栏显示和操作菜单。
     -   通过 `child_process` 模块启动和停止 MCP 服务器进程。
-    -   监听服务器的输出，捕获关键信息（如监听地址）并更新状态。
-    -   提供复制客户端配置的功能。
+    -   通过 IPC 与 MCP 服务器进行双向通信，接收服务器事件并发送指令。
+    -   利用 VS Code Debug API 执行调试操作。
+    -   管理插件配置。
 
 2.  **MCP 服务器 (`mcp-server` 目录):**
     -   一个独立的 Node.js 应用程序，实现了 Model Context Protocol 服务器。
     -   使用 `@modelcontextprotocol/sdk` 处理 MCP 协议的通信和工具注册。
-    -   通过 HTTP + Server-Sent Events (SSE) 与客户端进行通信。
-    -   监听一个指定的端口，并处理来自客户端的请求（如工具调用）。
-    -   目前包含一个    简单的 `helloWorld` 工具实现。
+    -   通过 stdio 与 AI 客户端进行通信。
+    -   通过 IPC 与 VS Code 插件进行双向通信，发送调试事件并接收插件端执行结果。
+    -   实现 VsCode Debugger 工具组定义的各种调试工具。
 
-这两个部分通过进程间通信（插件通过启动子进程并监听其标准输出来获取服务器信息）和网络通信（客户端和插件通过 HTTP/SSE 与服务器交互）协同工作。
+这两个部分通过进程间通信 (IPC) 协同工作。插件启动服务器子进程，并通过 IPC 通道进行双向通信。AI 客户端通过 stdio 与服务器通信，服务器再通过 IPC 与插件通信，插件最终通过 VS Code Debug API 与实际的调试器交互。
 
 ## @modelcontextprotocol/sdk 集成经验：解决 TypeScript 编译错误
 

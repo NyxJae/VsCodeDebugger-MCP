@@ -1,52 +1,112 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { spawn, ChildProcess } from 'child_process';
-import { StatusBarManager, McpServerStatus } from './statusBarManager'; // 引入状态栏管理器并导入 McpServerStatus
-import { getStoredPort, storePort } from './configManager'; // 导入配置管理函数
-import { isPortInUse, isValidPort } from './utils/portUtils'; // 导入端口工具函数
-
-// 定义 IPC 消息接口 (与 CurrentTask.md 一致)
-interface PluginRequest {
-    type: 'request';
-    command: string;
-    requestId: string;
-    payload: any;
-}
-
-interface PluginResponse {
-    type: 'response';
-    requestId: string;
-    status: 'success' | 'error';
-    payload?: any;
-    error?: { message: string };
-}
-
+import { StatusBarManager, McpServerStatus } from './statusBarManager';
+import { getStoredPort, storePort } from './configManager';
+import { isPortInUse, isValidPort } from './utils/portUtils';
+import { ProcessManager, ProcessStatus } from './managers/processManager';
+import { IpcHandler } from './managers/ipcHandler';
+import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
+import { PluginRequest } from './types'; // 从共享文件导入
+import * as Constants from './constants'; // 修正导入路径
 
 /**
- * 管理 MCP 服务器子进程的启动、停止和状态。
+ * 协调 MCP 服务器的启动、停止、状态管理和与 VS Code 的交互。
+ * 作为各个管理器的中心协调者。
  */
 export class McpServerManager implements vscode.Disposable {
-    private mcpServerProcess: ChildProcess | null = null;
-    private currentPort: number | null = null;
-    private readonly serverScriptPath: string;
-    private readonly serverCwd: string;
     private readonly outputChannel: vscode.OutputChannel;
+    private disposables: vscode.Disposable[] = [];
 
     /**
      * 创建一个新的 McpServerManager 实例。
      * @param context VS Code 扩展上下文。
      * @param statusBarManager 状态栏管理器实例。
+     * @param processManager 进程管理器实例。
+     * @param ipcHandler IPC 处理器实例。
+     * @param debuggerApiWrapper VS Code Debug API 包装器实例。
      */
     constructor(
         private context: vscode.ExtensionContext,
-        private statusBarManager: StatusBarManager
-    ) {
-        // 构建 mcp-server/dist/server.js 的绝对路径
-        this.serverScriptPath = path.join(context.extensionPath, 'mcp-server', 'dist', 'server.js');
-        // 设置子进程的工作目录为 mcp-server
-        this.serverCwd = path.join(context.extensionPath, 'mcp-server');
-        // 创建或获取名为 "MCP Server" 的 OutputChannel
-        this.outputChannel = vscode.window.createOutputChannel('Debug MCP Server');
+        private statusBarManager: StatusBarManager,
+        private processManager: ProcessManager,
+        private ipcHandler: IpcHandler,
+        private debuggerApiWrapper: DebuggerApiWrapper
+) {
+    this.outputChannel = vscode.window.createOutputChannel(Constants.OUTPUT_CHANNEL_COORDINATOR);
+    this.disposables.push(this.outputChannel);
+
+    // 将 DebuggerApiWrapper 注入 IpcHandler
+        this.ipcHandler.setDebuggerApiWrapper(this.debuggerApiWrapper);
+
+        // 连接 ProcessManager 事件到 StatusBarManager 和 IpcHandler
+        this.processManager.on('statusChange', (status: ProcessStatus, port: number | null) => {
+            // 将 ProcessStatus 映射到 McpServerStatus
+            let mcpStatus: McpServerStatus;
+            switch (status) { // 使用字符串字面量进行比较
+                case 'running':
+                    mcpStatus = 'running';
+                    break;
+                case 'starting':
+                    mcpStatus = 'starting';
+                    break;
+                case 'error':
+                    mcpStatus = 'error';
+                    break;
+                case 'stopped':
+                default:
+                    mcpStatus = 'stopped';
+                    break;
+            }
+            this.statusBarManager.setStatus(mcpStatus, port);
+        });
+        this.processManager.on('message', (message: any) => {
+            // 将从子进程收到的消息传递给 IpcHandler 处理
+            // 注意：IpcHandler 内部会处理消息并调用 DebuggerApiWrapper (如果需要)
+            // IpcHandler 内部也负责发送响应回子进程
+            // McpServerManager 在这里不需要直接处理 IPC 消息内容
+            this.outputChannel.appendLine(`[Coordinator] Forwarding message from process to IpcHandler: ${JSON.stringify(message)}`);
+            // !! 将消息实际传递给 IpcHandler !!
+            this.ipcHandler.handleIncomingMessage(message);
+        });
+
+        this.processManager.on('error', (err: Error) => {
+            this.outputChannel.appendLine(`[Coordinator] Received error event from ProcessManager: ${err.message}`);
+            vscode.window.showErrorMessage(`MCP 服务器进程错误: ${err.message}`);
+            // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新为 'error'
+        });
+
+        this.processManager.on('close', (code: number | null, signal: NodeJS.Signals | null, unexpected: boolean) => {
+            this.outputChannel.appendLine(`[Coordinator] Received close event from ProcessManager. Code: ${code}, Signal: ${signal}, Unexpected: ${unexpected}`);
+            // 如果是意外关闭，显示错误信息
+            if (unexpected) {
+                vscode.window.showErrorMessage(`MCP 服务器进程意外退出 (Code: ${code}, Signal: ${signal})`);
+            }
+            // IpcHandler 不再直接持有进程引用，无需清理
+            // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新
+        });
+        // 监听 IpcHandler 发出的需要 Debug API 的请求事件 (如果采用事件驱动方式)
+        // this.ipcHandler.on('debugApiRequest', async (command, payload, requestId) => {
+        //     try {
+        //         let result;
+        //         if (command === 'setBreakpoint') {
+        //             result = await this.debuggerApiWrapper.addBreakpoint(payload);
+        //         } else if (command === 'getBreakpoints') {
+        //             const breakpoints = this.debuggerApiWrapper.getBreakpoints();
+        //             result = { timestamp: new Date().toISOString(), breakpoints: breakpoints };
+        //         } else {
+        //             throw new Error(`Unsupported debug command: ${command}`);
+        //         }
+        //         this.ipcHandler.sendResponseToServer(requestId, 'success', result);
+        //     } catch (error: any) {
+        //         this.ipcHandler.sendResponseToServer(requestId, 'error', undefined, { message: error.message });
+        //     }
+        // });
+
+        this.disposables.push(
+            this.processManager,
+            this.ipcHandler,
+            // DebuggerApiWrapper 通常不需要 dispose
+            this.statusBarManager // StatusBarManager 实现了 Disposable
+        );
     }
 
     /**
@@ -54,355 +114,133 @@ export class McpServerManager implements vscode.Disposable {
      * @returns 如果服务器正在运行则返回 true，否则返回 false。
      */
     public isRunning(): boolean {
-        return this.mcpServerProcess !== null;
+        // 委托给 ProcessManager
+        return this.processManager.isRunning();
     }
 
     /**
-     * 启动 MCP 服务器子进程。
+     * 启动 MCP 服务器。
      */
     public async startServer(): Promise<void> {
-        // 防止重复启动
-        if (this.mcpServerProcess) {
-            vscode.window.showInformationMessage('MCP 服务器已在运行。');
+        // 防止重复启动 (ProcessManager 内部会处理)
+        if (this.processManager.getStatus() !== 'stopped') { // 使用字符串字面量
+            const status = this.processManager.getStatus();
+            const port = this.processManager.getCurrentPort();
+            vscode.window.showInformationMessage(`MCP 服务器已在运行或正在启动 (状态: ${status}${port ? `, 端口: ${port}` : ''})。`);
             return;
         }
 
         let targetPort = getStoredPort(this.context);
-        let portAvailable = false;
 
         try {
             const inUse = await isPortInUse(targetPort);
             if (inUse) {
                 const newPort = await this.handlePortConflict(targetPort);
                 if (newPort !== null) {
-                    targetPort = newPort; // Update target port
+                    targetPort = newPort; // 更新目标端口
                     const newPortInUse = await isPortInUse(targetPort);
-                    if (!newPortInUse) {
-                       portAvailable = true;
-                    } else {
+                    if (newPortInUse) {
                         vscode.window.showErrorMessage(`新端口 ${targetPort} 仍然被占用。请检查或尝试其他端口。`);
-                        this.handleServerError(); // Use unified error handler
-                        return; // Cannot start
+                        this.statusBarManager.setStatus('error', null); // 使用字符串字面量
+                        return; // 无法启动
                     }
                 } else {
-                    this.statusBarManager.setStatus('stopped', null); // Ensure status bar is updated
+                    // 用户取消输入新端口
+                    this.statusBarManager.setStatus('stopped', null); // 使用字符串字面量
                     return;
                 }
-            } else {
-                portAvailable = true; // Original port is available
             }
 
-            if (portAvailable) {
-                this.statusBarManager.setStatus('starting', targetPort); // Update status bar to starting
-                this.outputChannel.appendLine(`Attempting to start Debug MCP server on port ${targetPort}...`);
-                this.outputChannel.show(true);
+            // 获取工作区路径
+            const workspaceFolders = vscode.workspace.workspaceFolders;
+            if (!workspaceFolders || workspaceFolders.length === 0) {
+                vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
+                this.statusBarManager.setStatus('error', null); // 使用字符串字面量
+                return;
+            }
+            const workspacePath = workspaceFolders[0].uri.fsPath;
+            this.outputChannel.appendLine(`[Coordinator] Starting server with Port: ${targetPort}, Workspace: ${workspacePath}`);
 
-                const serverPath = path.join(this.context.extensionUri.fsPath, 'mcp-server', 'dist', 'server.js');
-                const nodePath = process.execPath;
+            // 启动进程，ProcessManager 会处理状态更新和事件触发
+            this.processManager.start(targetPort, workspacePath);
 
-                const workspaceFolders = vscode.workspace.workspaceFolders;
-                if (!workspaceFolders || workspaceFolders.length === 0) {
-                    vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
-                    this.statusBarManager.setStatus('error', null);
-                    return;
+            // 将子进程实例设置给 IpcHandler (在 ProcessManager 内部启动后)
+            // 需要一种方式在 ProcessManager 启动成功后获取 ChildProcess 实例
+            // 方案1: ProcessManager 暴露 getProcess() 方法 (不太好，破坏封装)
+            // 方案2: ProcessManager 在启动成功后发出 'processReady' 事件，携带 process 实例
+            // 暂时采用方案2的思路，但 ProcessManager 当前实现没有这个事件，先假设启动后 process 实例可用
+            // **修正:** ProcessManager 内部已经监听了 message 事件，不需要在这里再次设置
+            // 但是 IpcHandler 需要知道 process 实例来发送消息。
+            // 改进 ProcessManager，使其在启动后能提供 process 实例，或者 IpcHandler 直接依赖 ProcessManager.send()
+            // **再次修正:** IpcHandler 应该依赖 ProcessManager 来发送消息，而不是直接持有 process 实例。
+            // **最终决定:** IpcHandler 依赖 ProcessManager 发送消息。ProcessManager 内部持有 process。
+            // McpServerManager 监听 ProcessManager 的 'message' 事件，然后调用 IpcHandler.handleMessage()。
+            // IpcHandler.handleMessage() 处理消息，如果需要发送响应，调用 ProcessManager.send()。
+
+            // **当前实现调整:** ProcessManager 已经 emit('message')，并且 IpcHandler 构造时传入了 DebuggerApiWrapper。
+            // IpcHandler 内部的 registerMessageListener 需要修改为 handleMessage(message)，并且发送响应时调用 this.processManager.send()
+            // **因此，这里不需要显式设置 IpcHandler 的 process**
+
+            // **重要:** 需要修改 IpcHandler 以依赖 ProcessManager 发送消息。
+            // **暂时维持现状:** 让 IpcHandler 暂时持有 process 实例，后续再优化。
+            // 需要在 ProcessManager 启动后将 process 实例传递给 IpcHandler。
+            // 添加一个事件监听器，等待 ProcessManager 状态变为 'running' 或 'starting' 后设置
+            const onStatusChange = (status: ProcessStatus) => {
+                if (status === 'running' || status === 'starting') { // 使用字符串字面量
+                    // 假设 ProcessManager 有一个 getInternalProcess 方法 (需要添加)
+                    // const processInstance = this.processManager.getInternalProcess();
+                    // if (processInstance) {
+                    //     this.ipcHandler.setProcess(processInstance);
+                    //     this.outputChannel.appendLine(`[Coordinator] Set process instance in IpcHandler.`);
+                    // }
+                    // 移除监听器，避免重复设置
+                    this.processManager.off('statusChange', onStatusChange);
+                } else if (status === 'error' || status === 'stopped') { // 使用字符串字面量
+                     this.processManager.off('statusChange', onStatusChange); // 如果启动失败也移除
                 }
-                const workspacePath = workspaceFolders[0].uri.fsPath;
-                console.log(`[MCP Server Manager] Workspace path: ${workspacePath}`);
+            };
+            this.processManager.on('statusChange', onStatusChange);
 
-                const env = {
-                    ...process.env,
-                    MCP_PORT: targetPort.toString(),
-                    VSCODE_WORKSPACE_PATH: workspacePath
-                };
 
-                // 启用 IPC 通道: 修改 stdio 选项
-                this.mcpServerProcess = spawn(nodePath, [serverPath], {
-                    env: env,
-                    stdio: ['pipe', 'pipe', 'pipe', 'ipc'] // 添加 'ipc'
-                });
-
-                console.log(`[MCP Server Manager] Spawning server process with PID: ${this.mcpServerProcess.pid}`);
-                this.outputChannel.appendLine(`Spawning server process with PID: ${this.mcpServerProcess.pid}`);
-
-                // --- IPC 消息监听器 ---
-                this.mcpServerProcess.on('message', async (message: PluginRequest | any) => {
-                    console.log('[Plugin] Received IPC message from server:', message);
-                    this.outputChannel.appendLine(`[IPC] Received message: ${JSON.stringify(message)}`);
-
-                    // 检查是否为 setBreakpoint 请求
-                    if (message?.type === 'request' && message.command === 'setBreakpoint') {
-                        const { requestId, payload } = message;
-                        try {
-                            const {
-                                file_path: filePath,      // 将 snake_case 映射到 camelCase
-                                line_number: lineNumber,    // 将 snake_case 映射到 camelCase
-                                column_number: columnNumber, // 可选参数，同样处理
-                                condition,                 // 如果命名一致则无需映射
-                                hit_condition: hitCondition, // 将 snake_case 映射到 camelCase
-                                log_message: logMessage     // 将 snake_case 映射到 camelCase
-                            } = payload;
-
-                            // 基本参数校验
-                            if (!filePath || typeof lineNumber !== 'number' || lineNumber <= 0) {
-                                throw new Error('Invalid setBreakpoint request payload: missing or invalid filePath or lineNumber.');
-                            }
-
-                            const uri = vscode.Uri.file(filePath);
-                            const absoluteFilePath = uri.fsPath; // 获取绝对路径用于比较
-                            // 行号在 VS Code API 中是 0-based，用户提供的是 1-based
-                            const zeroBasedLine = lineNumber - 1;
-                            // 列号也是 0-based，如果未提供则为 undefined
-                            const zeroBasedColumn = (typeof columnNumber === 'number' && columnNumber > 0) ? columnNumber - 1 : undefined;
-
-                            // --- 先查：查找现有断点 ---
-                            const existingBreakpoints = vscode.debug.breakpoints;
-                            const existingBp = existingBreakpoints.find(bp => {
-                                if (!(bp instanceof vscode.SourceBreakpoint)) {
-                                    return false;
-                                }
-                                const bpLocation = bp.location;
-                                // 比较文件路径 (绝对路径)
-                                if (bpLocation.uri.fsPath !== absoluteFilePath) {
-                                    return false;
-                                }
-                                // 比较行号 (0-based)
-                                if (bpLocation.range.start.line !== zeroBasedLine) {
-                                    return false;
-                                }
-                                // 比较列号 (0-based, 仅当请求中提供了有效的列号时)
-                                if (zeroBasedColumn !== undefined) {
-                                    return bpLocation.range.start.character === zeroBasedColumn;
-                                }
-                                // 如果请求未提供列号，则仅匹配文件和行即可
-                                return true;
-                            }) as vscode.SourceBreakpoint | undefined;
-
-                            if (existingBp) {
-                                // --- 如果找到，复用现有断点 ---
-                                this.outputChannel.appendLine(`[IPC] Found existing breakpoint at location for request ${requestId}. Reusing ID: ${existingBp.id}`);
-                                const responsePayload = {
-                                    breakpoint: {
-                                        id: existingBp.id, // 使用现有 ID
-                                        verified: false, // 保持 false, 依赖后续事件更新
-                                        source: { path: filePath },
-                                        line: lineNumber, // 返回 1-based 行号
-                                        column: columnNumber, // 返回请求的列号 (1-based)
-                                        message: "Reused existing breakpoint at this location.", // 添加提示信息
-                                        timestamp: new Date().toISOString() // 生成当前时间戳
-                                    }
-                                };
-                                this.sendResponseToServer(requestId, 'success', responsePayload);
-
-                            } else {
-                                // --- 如果没找到，执行添加逻辑 ---
-                                this.outputChannel.appendLine(`[IPC] No existing breakpoint found at location for request ${requestId}. Adding new one.`);
-                                // 如果请求未提供列号，VS Code 通常在行的开头添加断点 (列 0)
-                                const position = new vscode.Position(zeroBasedLine, zeroBasedColumn ?? 0);
-                                const location = new vscode.Location(uri, position);
-
-                                const breakpoint = new vscode.SourceBreakpoint(
-                                    location,
-                                    true, // enabled
-                                    condition,
-                                    hitCondition,
-                                    logMessage
-                                );
-
-                                // 调用 VS Code API 设置断点
-                                await vscode.debug.addBreakpoints([breakpoint]);
-                                this.outputChannel.appendLine(`[IPC] Added breakpoint via API for request ${requestId}`);
-
-                                // --- 获取断点 ID (保持现有逻辑，但基于添加时的位置查找) ---
-                                await new Promise(resolve => setTimeout(resolve, 100)); // e.g., 100ms delay
-
-                                const currentBreakpoints = vscode.debug.breakpoints;
-                                this.outputChannel.appendLine(`[IPC] Current breakpoints count after add: ${currentBreakpoints.length}`);
-
-                                // 查找与刚添加的位置精确匹配的断点 (使用添加时的列号 zeroBasedColumn ?? 0)
-                                const addedBp = currentBreakpoints.find(bp =>
-                                    bp instanceof vscode.SourceBreakpoint &&
-                                    bp.location.uri.fsPath === uri.fsPath &&
-                                    bp.location.range.start.line === zeroBasedLine &&
-                                    bp.location.range.start.character === (zeroBasedColumn ?? 0) // 匹配添加时使用的列
-                                ) as vscode.SourceBreakpoint | undefined;
-
-                                let breakpointId: string | undefined = addedBp?.id;
-                                let bpMessage: string;
-
-                                if (breakpointId) {
-                                    bpMessage = "Breakpoint added, verification pending.";
-                                    this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID: ${breakpointId}`);
-                                } else {
-                                    // 如果精确匹配失败，尝试只匹配行号（作为备选方案）
-                                    const addedBpFallback = currentBreakpoints
-                                        .filter(bp => bp instanceof vscode.SourceBreakpoint &&
-                                                      bp.location.uri.fsPath === uri.fsPath &&
-                                                      bp.location.range.start.line === zeroBasedLine)
-                                        .pop() as vscode.SourceBreakpoint | undefined; // 取最后一个匹配行的
-
-                                    breakpointId = addedBpFallback?.id;
-                                    if (breakpointId) {
-                                        bpMessage = "Breakpoint added (ID found by line match), verification pending.";
-                                        this.outputChannel.appendLine(`[IPC] Found matching breakpoint ID by line: ${breakpointId}`);
-                                    } else {
-                                        bpMessage = "Breakpoint added (ID unavailable immediately), verification pending.";
-                                        this.outputChannel.appendLine(`[IPC] Could not find matching breakpoint ID immediately.`);
-                                    }
-                                }
-
-                                // --- 构造成功响应 ---
-                                const responsePayload = {
-                                    breakpoint: {
-                                        id: breakpointId, // 可能为 undefined
-                                        verified: false, // API 限制，初始为 false
-                                        source: { path: filePath },
-                                        line: lineNumber, // 返回 1-based 行号
-                                        column: columnNumber, // 返回请求的列号 (1-based)
-                                        message: bpMessage,
-                                        timestamp: new Date().toISOString() // 生成时间戳
-                                    }
-                                };
-                                this.sendResponseToServer(requestId, 'success', responsePayload);
-                            }
-
-                        } catch (error: any) {
-                            // --- 构造失败响应 ---
-                            console.error(`[Plugin] Failed to set breakpoint for request ${requestId}: ${error.message}`);
-                            this.outputChannel.appendLine(`[IPC Error] Failed to set breakpoint for request ${requestId}: ${error.message}`);
-                            this.sendResponseToServer(requestId, 'error', undefined, { message: `Failed to set breakpoint: ${error.message}` });
-                        }
-                    } else if (message?.type === 'request' && message.command === 'getBreakpoints') {
-                        // --- 新增：处理 getBreakpoints 请求 ---
-                        const { requestId } = message;
-                        try {
-                            console.log(`[Plugin] Received getBreakpoints request (ID: ${requestId}) from MCP server.`);
-                            this.outputChannel.appendLine(`[IPC] Received getBreakpoints request (ID: ${requestId})`);
-
-                            const vscodeBreakpoints = vscode.debug.breakpoints;
-                            const formattedBreakpoints = vscodeBreakpoints.map(bp => {
-                                let source: { path: string } | null = null;
-                                let line: number | null = null;
-                                let column: number | null = null;
-
-                                // 检查断点是否为 SourceBreakpoint，只有它才有 location
-                                if (bp instanceof vscode.SourceBreakpoint) {
-                                    source = { path: bp.location.uri.fsPath };
-                                    line = bp.location.range.start.line + 1; // 1-based
-                                    column = bp.location.range.start.character + 1; // 1-based
-                                }
-                                // 对于 FunctionBreakpoint 或其他类型，source/line/column 保持 null
-
-                                // 注意: ProjectBrief.md 中的 'verified' 指调试器是否验证成功。
-                                // vscode.Breakpoint 没有直接的 'verified' 状态。
-                                // 这里使用 'enabled' (用户是否启用断点) 作为近似值。
-                                const verified = bp.enabled;
-
-                                return {
-                                    id: bp.id, // id 是 string 类型
-                                    verified: verified,
-                                    source: source,
-                                    line: line,
-                                    column: column,
-                                    condition: bp.condition || undefined, // 确保 undefined 而不是空字符串
-                                    hit_condition: bp.hitCondition || undefined, // 确保 undefined 而不是空字符串
-                                    log_message: bp.logMessage || undefined, // 确保 undefined 而不是空字符串
-                                };
-                            });
-
-                            const responsePayload = {
-                                status: 'success', // 嵌套一层 status，与 setBreakpoint 保持一致？不，直接放顶层
-                                timestamp: new Date().toISOString(), // ISO 8601 UTC
-                                breakpoints: formattedBreakpoints,
-                            };
-
-                            console.log(`[Plugin] Sending ${formattedBreakpoints.length} breakpoints to MCP server for request ${requestId}.`);
-                            this.sendResponseToServer(requestId, 'success', responsePayload);
-
-                        } catch (error: any) {
-                            console.error(`[Plugin] Failed to get breakpoints for request ${requestId}: ${error.message}`);
-                            this.outputChannel.appendLine(`[IPC Error] Failed to get breakpoints for request ${requestId}: ${error.message}`);
-                            this.sendResponseToServer(requestId, 'error', undefined, { message: `Failed to get breakpoints: ${error.message}` });
-                        }
-                        // --- 结束：处理 getBreakpoints 请求 ---
-                    } else {
-                        // 处理未知或非预期的消息
-                        console.warn('[Plugin] Received unknown IPC message type or command:', message);
-                        this.outputChannel.appendLine(`[IPC Warning] Received unknown message: ${JSON.stringify(message)}`);
-                        // 如果是请求类型但命令未知，可以发送错误响应
-                        if (message?.type === 'request' && message.requestId) {
-                             this.sendResponseToServer(message.requestId, 'error', undefined, { message: 'Unknown command or invalid message format.' });
-                        }
-                    }
-                });
-
-                // --- 标准输出/错误和进程事件监听器 ---
-                this.mcpServerProcess.stdout?.on('data', (data: Buffer) => {
-                    const output = data.toString();
-                    console.log(`MCP Server stdout: ${output}`);
-                    this.outputChannel.appendLine(`[stdout] ${output}`);
-                    if (output.includes(`MCP Server listening on port ${targetPort}`)) {
-                         this.currentPort = targetPort;
-                         this.statusBarManager.setStatus('running', this.currentPort);
-                         vscode.window.showInformationMessage(`MCP 服务器已在端口 ${this.currentPort} 启动。`);
-                         this.outputChannel.appendLine(`MCP Server successfully started, listening on port ${this.currentPort}.`);
-                    }
-                });
-
-                this.mcpServerProcess.stderr?.on('data', (data: Buffer) => {
-                    const errorOutput = data.toString();
-                    console.error(`MCP Server stderr: ${errorOutput.trim()}`);
-                    this.outputChannel.append(`[stderr] ${errorOutput}`);
-                    this.outputChannel.show(true);
-                });
-
-                this.mcpServerProcess.on('error', (err) => {
-                    console.error('Failed to start MCP server process:', err);
-                    this.handleServerError(`启动 MCP 服务器进程失败: ${err.message}`);
-                });
-
-                this.mcpServerProcess.on('close', (code) => {
-                    console.log(`MCP server process exited with code ${code}`);
-                    this.outputChannel.appendLine(`MCP server process exited with code ${code}`);
-                    if (this.mcpServerProcess) { // Check if it was not explicitly set to null by stopServer
-                       this.handleServerError(`服务器进程意外退出，退出码: ${code}`);
-                    } else {
-                        console.log('MCP server process stopped by user.');
-                    }
-                });
-            }
         } catch (error: any) {
-            console.error('Error starting MCP server:', error);
-            this.handleServerError(`启动 MCP 服务器时出错: ${error.message}`);
+            console.error('[Coordinator] Error starting MCP server:', error);
+            vscode.window.showErrorMessage(`启动 MCP 服务器时出错: ${error.message}`);
+            this.statusBarManager.setStatus('error', null); // 使用字符串字面量
         }
     }
 
     /**
-     * 停止正在运行的 MCP 服务器子进程。
+     * 停止 MCP 服务器。
      */
     public stopServer(): void {
-        if (!this.mcpServerProcess) {
-            vscode.window.showInformationMessage('Debug MCP Server is not running.');
-            if (this.statusBarManager.getStatus() !== 'stopped') {
-                 this.statusBarManager.setStatus('stopped', null);
-            }
-            return;
-        }
+        this.outputChannel.appendLine('[Coordinator] Stopping server...');
+        // 委托给 ProcessManager
+        this.processManager.stop();
+        // StatusBarManager 的状态会通过 ProcessManager 的事件更新
+    }
 
-        console.log('Stopping MCP server...');
-        this.outputChannel.appendLine('Attempting to stop Debug MCP Server...');
-        const processToKill = this.mcpServerProcess;
-        this.mcpServerProcess = null; // Set to null BEFORE killing
-        this.currentPort = null;
-        this.statusBarManager.setStatus('stopped', null);
-        try {
-            processToKill.kill('SIGTERM');
-            console.log('SIGTERM signal sent to Debug MCP Server.');
-            this.outputChannel.appendLine('SIGTERM signal sent to Debug MCP Server. Waiting for exit...');
-        } catch (error: any) {
-            console.error('Error sending SIGTERM to MCP server process:', error);
-            this.outputChannel.appendLine(`Error sending SIGTERM: ${error.message}`);
-        }
-        vscode.window.showInformationMessage('MCP 服务器已停止。');
+    /**
+     * 重启 MCP 服务器。
+     */
+    public async restartServer(): Promise<void> {
+        this.outputChannel.appendLine('[Coordinator] Restarting server...');
+        // 委托给 ProcessManager
+        await this.processManager.restart();
+        // StatusBarManager 和 IpcHandler 的状态会通过 ProcessManager 的事件更新和重新设置
+        // 可能需要重新设置 IpcHandler 的 process 实例，逻辑同 startServer
+        const onStatusChange = (status: ProcessStatus) => {
+             if (status === 'running' || status === 'starting') { // 使用字符串字面量
+                 // const processInstance = this.processManager.getInternalProcess(); // 假设方法存在
+                 // if (processInstance) {
+                 //     this.ipcHandler.setProcess(processInstance);
+                 //     this.outputChannel.appendLine(`[Coordinator] Re-set process instance in IpcHandler after restart.`);
+                 // }
+                 this.processManager.off('statusChange', onStatusChange);
+             } else if (status === 'error' || status === 'stopped') { // 使用字符串字面量
+                  this.processManager.off('statusChange', onStatusChange);
+             }
+         };
+         this.processManager.on('statusChange', onStatusChange);
     }
 
     /**
@@ -410,143 +248,91 @@ export class McpServerManager implements vscode.Disposable {
      */
     public async copyMcpConfigToClipboard(): Promise<void> {
         try {
-            const portToUse = this.currentPort ?? getStoredPort(this.context);
+            // 优先从 ProcessManager 获取当前运行端口，否则从 ConfigManager 获取存储端口
+            const portToUse = this.processManager.getCurrentPort() ?? getStoredPort(this.context);
 
             if (!portToUse) {
-                 vscode.window.showWarningMessage('MCP Server port is not set. Cannot copy config.');
-                 this.outputChannel.appendLine('Attempted to copy config, but port is not set.');
+                 vscode.window.showWarningMessage('MCP 服务器端口未设置或服务器未运行。无法复制配置。');
+                 this.outputChannel.appendLine('[Coordinator] Attempted to copy config, but port is not available.');
                  return;
             }
 
             const mcpConfig = {
                 mcpServers: {
-                    "vscode-debugger-mcp": {
-                        url: `http://localhost:${portToUse}/mcp`,
-                        headers: {}
+                    [Constants.MCP_CONFIG_SERVER_KEY]: {
+                        url: Constants.MCP_CONFIG_URL_TEMPLATE.replace('{port}', String(portToUse)),
+                        headers: {} // 保留 headers 字段
                     }
                 }
             };
 
             const configString = JSON.stringify(mcpConfig, null, 2);
             await vscode.env.clipboard.writeText(configString);
-            vscode.window.showInformationMessage(`MCP server configuration (Port: ${portToUse}) copied to clipboard!`);
-            this.outputChannel.appendLine(`MCP server configuration (Port: ${portToUse}) copied to clipboard.`);
-            console.log('MCP config copied:', configString);
+            vscode.window.showInformationMessage(`MCP 服务器配置 (端口: ${portToUse}) 已复制到剪贴板！`);
+            this.outputChannel.appendLine(`[Coordinator] MCP server configuration (Port: ${portToUse}) copied to clipboard.`);
+            console.log('[Coordinator] MCP config copied:', configString);
 
         } catch (error: unknown) {
-            const errorMsg = `Failed to copy MCP config: ${error instanceof Error ? error.message : String(error)}`;
-            console.error(errorMsg);
-            this.outputChannel.appendLine(`Error: ${errorMsg}`);
+            const errorMsg = `无法复制 MCP 配置: ${error instanceof Error ? error.message : String(error)}`;
+            console.error('[Coordinator]', errorMsg);
+            this.outputChannel.appendLine(`[Coordinator Error] ${errorMsg}`);
             vscode.window.showErrorMessage(errorMsg);
-            this.outputChannel.show(true);
         }
     }
 
     /**
-     * 处理端口冲突的函数
+     * 处理端口冲突的函数 (保留私有，或移至 ConfigManager/PortUtils)
      */
     private async handlePortConflict(occupiedPort: number): Promise<number | null> {
         const choice = await vscode.window.showWarningMessage(
             `MCP 服务器端口 ${occupiedPort} 已被占用。`,
-            { modal: true },
-            '输入新端口'
+            { modal: true }, // 模态对话框，阻止其他操作
+            Constants.UI_TEXT_INPUT_NEW_PORT
         );
 
-        if (choice === '输入新端口') {
+        if (choice === Constants.UI_TEXT_INPUT_NEW_PORT) {
             const newPortStr = await vscode.window.showInputBox({
                 prompt: `请输入一个新的端口号 (1025-65535)，当前端口 ${occupiedPort} 被占用。`,
-                placeHolder: '例如: 6010',
+                placeHolder: `例如: ${Constants.DEFAULT_MCP_PORT + 1}`, // 建议一个不同的端口
+                ignoreFocusOut: true, // 防止失去焦点时关闭输入框
                 validateInput: (value) => {
-                    if (!value) {return '端口号不能为空。';}
-                    if (!isValidPort(value)) {
+                    if (!value) { return '端口号不能为空。'; }
+                    const portNum = parseInt(value, 10);
+                    if (!isValidPort(portNum)) {
                         return '请输入 1025 到 65535 之间的有效端口号。';
                     }
-                    return null;
+                    // 可以在这里添加额外的检查，例如再次检查新端口是否被占用
+                    // const isNewPortInUse = await isPortInUse(portNum);
+                    // if (isNewPortInUse) { return `端口 ${portNum} 也被占用了。`; }
+                    return null; // 验证通过
                 }
             });
 
             if (newPortStr) {
                 const newPort = parseInt(newPortStr, 10);
+                // 持久化新端口
                 await storePort(this.context, newPort);
+                this.outputChannel.appendLine(`[Coordinator] New port ${newPort} selected and stored.`);
                 return newPort;
             }
         }
+        // 用户取消或关闭了输入框
         vscode.window.showInformationMessage('MCP 服务器启动已取消。');
+        this.outputChannel.appendLine('[Coordinator] Server start cancelled by user during port conflict resolution.');
         return null;
     }
 
-     /**
-      * 统一的错误处理和状态重置
-      */
-    private handleServerError(errorMessage?: string): void {
-        if (errorMessage) {
-           vscode.window.showErrorMessage(`MCP 服务器错误: ${errorMessage}`);
-           this.outputChannel.appendLine(`Error: ${errorMessage}`);
-           this.outputChannel.show(true);
-        }
-        // Ensure process is nullified if it exists and wasn't killed by stopServer
-        if (this.mcpServerProcess) {
-            try {
-                if (!this.mcpServerProcess.killed) {
-                    this.mcpServerProcess.kill('SIGTERM'); // Attempt to kill if not already
-                }
-            } catch (e) {
-                console.warn("Error attempting to kill process during error handling:", e);
-            }
-            this.mcpServerProcess = null;
-        }
-        this.currentPort = null;
-        this.statusBarManager.setStatus('error', null);
-    }
-
-    /**
-     * 重启 MCP 服务器。
-     */
-    public async restartServer(): Promise<void> {
-        console.log('Restarting MCP server...');
-        this.outputChannel.appendLine('Restarting Debug MCP Server...');
-        this.stopServer();
-        // Add a small delay to ensure the port is released, especially on Windows
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await this.startServer();
-    }
 
     /**
      * 实现 vscode.Disposable 接口，用于在插件停用时清理资源。
      */
     dispose(): void {
-        console.log('Disposing McpServerManager...');
-        this.stopServer(); // Ensure server is stopped when extension is deactivated
-        this.outputChannel.dispose(); // Dispose of the OutputChannel
+        this.outputChannel.appendLine('[Coordinator] Disposing McpServerManager...');
+        // 调用所有可释放对象的 dispose 方法
+        vscode.Disposable.from(...this.disposables).dispose();
+        // 移除所有事件监听器 (虽然 ProcessManager dispose 时会移除，但以防万一)
+        this.processManager.removeAllListeners();
+        // this.ipcHandler.removeAllListeners(); // 如果 IpcHandler 是 EventEmitter
     }
 
-    // --- 新增：发送响应给服务器子进程 ---
-    private sendResponseToServer(requestId: string, status: 'success' | 'error', payload?: any, error?: { message: string }): void {
-        if (this.mcpServerProcess && !this.mcpServerProcess.killed) { // Check if process exists and is not killed
-            const responseMessage: PluginResponse = {
-                type: 'response',
-                requestId: requestId,
-                status: status,
-                payload: payload,
-                error: error
-            };
-            try {
-                this.mcpServerProcess.send(responseMessage, (err) => {
-                    if (err) {
-                        console.error(`[Plugin] Failed to send IPC response for request ${requestId}:`, err);
-                        this.outputChannel.appendLine(`[IPC Error] Failed to send response for request ${requestId}: ${err.message}`);
-                        // Consider how to handle send errors, maybe retry or log significantly
-                    } else {
-                         this.outputChannel.appendLine(`[IPC] Sent response for request ${requestId}: ${status}`);
-                    }
-                });
-            } catch (sendError: any) {
-                 console.error(`[Plugin] Error during IPC send for request ${requestId}:`, sendError);
-                 this.outputChannel.appendLine(`[IPC Error] Exception during send for request ${requestId}: ${sendError.message}`);
-            }
-        } else {
-            console.warn(`[Plugin] Attempted to send response for request ${requestId}, but server process is not running or killed.`);
-            this.outputChannel.appendLine(`[IPC Warning] Cannot send response for ${requestId}, server process unavailable.`);
-        }
-    }
 }

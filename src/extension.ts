@@ -5,10 +5,17 @@ import { StatusBarManager } from './statusBarManager'; // 导入 StatusBarManage
 import { McpServerManager } from './mcpServerManager'; // 导入 McpServerManager
 import { getStoredPort, storePort } from './configManager'; // 导入配置管理函数
 import { isValidPort } from './utils/portUtils'; // 导入端口工具函数
+import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper'; // 导入 DebuggerApiWrapper
+import { IpcHandler } from './managers/ipcHandler'; // 导入 IpcHandler
+import { ProcessManager } from './managers/processManager'; // 导入 ProcessManager
 
 // 声明模块级变量来持有实例
 let statusBarManager: StatusBarManager;
 let mcpServerManager: McpServerManager;
+let debuggerApiWrapper: DebuggerApiWrapper;
+let ipcHandler: IpcHandler;
+let processManager: ProcessManager;
+let outputChannel: vscode.OutputChannel; // 添加 OutputChannel 变量
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
@@ -18,10 +25,31 @@ export function activate(context: vscode.ExtensionContext) {
 	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "vscode-debugger-mcp" is now active!');
 
-	// 实例化 StatusBarManager
+	// 创建 OutputChannel
+	// 注意：IpcHandler 和 ProcessManager 内部也会创建自己的 OutputChannel
+	// 这里可以考虑是否需要一个顶层 Channel，或者让 Manager 自己管理
+	// 暂时创建一个给 IpcHandler 使用 (虽然 IpcHandler 内部也会创建，但构造函数需要一个)
+	// 更好的做法是让 McpServerManager 创建并传递给需要的组件
+	outputChannel = vscode.window.createOutputChannel('Debug MCP Extension');
+	context.subscriptions.push(outputChannel); // 添加到清理列表
+
+	// 实例化依赖项
 	statusBarManager = new StatusBarManager(context);
-	// 实例化 McpServerManager，并传入 statusBarManager
-	mcpServerManager = new McpServerManager(context, statusBarManager);
+	debuggerApiWrapper = new DebuggerApiWrapper();
+	// 传入 extensionPath 给 ProcessManager
+	processManager = new ProcessManager(context.extensionPath);
+	// 传入 outputChannel 和 processManager 给 IpcHandler
+	ipcHandler = new IpcHandler(outputChannel, processManager);
+
+
+	// 实例化 McpServerManager，并传入正确的依赖项 (5个)
+	mcpServerManager = new McpServerManager(
+		context,
+		statusBarManager,
+		processManager, // 传入 processManager
+		ipcHandler,     // 传入 ipcHandler
+		debuggerApiWrapper // 传入 debuggerApiWrapper
+	);
 
 	// 注册状态栏项点击时触发的命令
 	const showServerMenuCommand = vscode.commands.registerCommand(statusBarManager.commandId, () => {
@@ -83,7 +111,7 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 				placeHolder: `当前: ${currentPort}`,
 				value: currentPort.toString(), // 预填当前值
 				validateInput: (value) => {
-					if (!value) return '端口号不能为空。';
+					if (!value) {return '端口号不能为空。';}
 					if (!isValidPort(value)) {
 						return '请输入 1025 到 65535 之间的有效端口号。';
 					}

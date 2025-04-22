@@ -6,13 +6,11 @@ import express, { Request, Response } from "express"; // 导入 express
 import http from 'http'; // 导入 http 模块以获取 Server 类型
 
 // 导入新的工具处理函数
-import {
-    handleGetDebuggerConfigurations,
-    handleSetBreakpoint, setBreakpointSchema,
-    handleGetBreakpoints, getBreakpointsSchema // 导入 get_breakpoints 相关
-} from './toolProviders/debuggerTools';
+// 导入新的 Debug 工具模块
+import * as DebugTools from './toolProviders/debug';
 // 导入 pluginCommunicator 相关函数和接口
 import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
+import * as Constants from './constants'; // 导入常量
 
 import { z } from "zod"; // 确保 Zod 已导入
 // import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/server/types.js"; // Attempt to import if needed, otherwise use 'any'
@@ -34,8 +32,8 @@ const logger = {
 const server = new McpServer({
   // transport is connected later
   logger: logger, // Pass logger instance
-  name: 'vscode-debugger-mcp', // Use name as per README example
-  version: '1.1.0' // Use version as per README example
+  name: 'vscode-debugger-mcp', // 直接使用字符串，因为它在 src/constants.ts 中定义
+  version: '1.1.0' // Use version as per README example - TODO: Consider moving to constants or package.json
 });
 
 // 定义 helloWorld 工具处理函数 (返回值结构根据 README 调整)
@@ -62,27 +60,27 @@ logger.info('[MCP Server] Registered tool: helloWorld'); // 添加日志
 
 // 注册获取调试配置的工具
 server.tool(
-    'get_debugger_configurations', // 工具名称，与 ProjectBrief 一致
+    Constants.TOOL_GET_DEBUGGER_CONFIGURATIONS, // 使用常量
     {}, // 输入 Schema 为空对象，因为此工具无输入参数
-    handleGetDebuggerConfigurations // 指定处理函数
+    DebugTools.handleGetDebuggerConfigurations // 指定处理函数
 );
-logger.info('[MCP Server] Registered tool: get_debugger_configurations'); // 添加日志
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_GET_DEBUGGER_CONFIGURATIONS}`); // 添加日志
 
 // 注册设置断点的工具
 server.tool(
-    'set_breakpoint', // 工具名称
-    setBreakpointSchema.shape, // 传入 Zod Schema 的 shape (恢复原状以匹配 SDK 签名)
-    handleSetBreakpoint // 指定处理函数
+    Constants.TOOL_SET_BREAKPOINT, // 使用常量
+    DebugTools.setBreakpointSchema.shape, // 传入 Zod Schema 的 shape
+    DebugTools.handleSetBreakpoint // 指定处理函数
 );
-logger.info('[MCP Server] Registered tool: set_breakpoint'); // 添加日志
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_SET_BREAKPOINT}`); // 添加日志
 
 // 注册获取所有断点的工具
 server.tool(
-    'get_breakpoints', // 工具名称
-    getBreakpointsSchema.shape, // 输入 Schema (空对象)
-    handleGetBreakpoints // 指定处理函数
+    Constants.TOOL_GET_BREAKPOINTS, // 使用常量
+    DebugTools.getBreakpointsSchema.shape, // 输入 Schema
+    DebugTools.handleGetBreakpoints // 指定处理函数
 );
-logger.info('[MCP Server] Registered tool: get_breakpoints'); // 添加日志
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_GET_BREAKPOINTS}`); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {
@@ -262,9 +260,9 @@ process.on('message', (message: any) => {
     if (
         message &&
         typeof message === 'object' &&
-        message.type === 'response' && // 检查 type 字段
+        message.type === 'response' && // 直接使用字符串，因为它在 src/constants.ts 中定义
         typeof message.requestId === 'string' && // 检查 requestId 字段
-        (message.status === 'success' || message.status === 'error') // 检查 status 字段
+        (message.status === Constants.STATUS_SUCCESS || message.status === Constants.STATUS_ERROR) // 使用正确的常量名
         // payload 和 error 是可选的，不强制检查
     ) {
         // 确认消息结构符合 PluginResponse，然后处理
