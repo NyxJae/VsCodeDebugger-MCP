@@ -144,3 +144,57 @@ VS Code插件端（例如`src/mcpServerManager.ts`）通常通过监听子进程
 - 将其他日志信息（调试信息`logger.info`、错误信息`logger.error`等）配置为输出到`stderr`
 - 可通过`console.error`或专门的日志库配置
 - 避免干扰`stdout`上的启动信号
+## Zod Schema 结构与 `.shape` 的使用说明
+
+在 `mcp-server/src/toolProviders/debug/removeBreakpoint.ts` 中，我们为 `remove_breakpoint` 工具的输入参数定义了 Zod Schema。为了同时满足参数结构定义和复杂的校验逻辑（三选一），我们采用了两步结构：
+
+1.  **基础 Schema (`BaseRemoveBreakpointInputSchema`):** 定义了所有可能的输入字段及其基本类型。
+    ```typescript
+    // mcp-server/src/toolProviders/debug/removeBreakpoint.ts
+    export const BaseRemoveBreakpointInputSchema = z.object({
+      breakpoint_id: z.number().int().positive().optional().describe('要移除的断点的唯一 ID。'),
+      location: LocationSchema.optional().describe('指定要移除断点的位置。'),
+      clear_all: z.boolean().optional().describe('如果设置为 true，则尝试移除所有断点。'),
+    });
+    ```
+
+2.  **精炼 Schema (`RemoveBreakpointInputSchema`):** 在基础 Schema 上应用 `.refine()` 方法，添加了“三选一”的自定义校验逻辑。
+    ```typescript
+    // mcp-server/src/toolProviders/debug/removeBreakpoint.ts
+    export const RemoveBreakpointInputSchema = BaseRemoveBreakpointInputSchema.refine(
+      (data) => {
+        const providedParams = [data.breakpoint_id, data.location, data.clear_all].filter(
+          (param) => param !== undefined
+        );
+        return providedParams.length === 1;
+      },
+      {
+        message: '必须且只能提供 breakpoint_id、location 或 clear_all 中的一个参数。',
+      }
+    );
+    ```
+
+**为何需要这种结构以及 `.shape` 的作用？**
+
+在 `mcp-server/src/server.ts` 中注册 MCP 工具时，`@modelcontextprotocol/sdk` 的 `server.tool()` 方法需要知道工具输入参数的“形状”（即字段名和类型），以便进行基本的结构校验和生成文档。Zod Schema 通过 `.shape` 属性暴露了这个结构信息。
+
+然而，当我们在 Schema 上使用 `.refine()`、`.transform()` 等方法时，返回的是一个 `ZodEffects` 对象，它封装了原始 Schema 和附加逻辑，但**不再直接暴露原始的 `.shape` 属性**。
+
+因此，如果直接将带有 `.refine()` 的 `RemoveBreakpointInputSchema` 传递给 `server.tool()`，SDK 将无法获取参数的形状信息。
+
+**解决方案：**
+
+通过先定义一个不包含 `.refine()` 的 `BaseRemoveBreakpointInputSchema`，我们可以在注册工具时访问其 `.shape` 属性，将参数结构信息提供给 SDK：
+
+```typescript
+// mcp-server/src/server.ts
+server.tool(
+    Constants.TOOL_REMOVE_BREAKPOINT,
+    DebugTools.BaseRemoveBreakpointInputSchema.shape, // 使用基础 Schema 的 .shape
+    DebugTools.handleRemoveBreakpoint
+);
+```
+
+而在工具的实际处理函数 `handleRemoveBreakpoint` 内部，我们使用带有 `.refine()` 校验逻辑的 `RemoveBreakpointInputSchema` 来解析和验证传入的参数，确保满足“三选一”的业务规则。
+
+这种分离基础结构定义和复杂校验逻辑的方式，使得我们既能满足 SDK 对参数形状的要求，又能实现自定义的校验规则。

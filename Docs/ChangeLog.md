@@ -4,6 +4,10 @@
 
 ## [V0.2] - [2025.04.22]
 
+### 新功能
+- 实现 `remove_breakpoint` 工具，用于移除指定的断点（支持按 ID、按位置或全部清除）。
+- 实现 `get_breakpoints` 工具，用于获取当前调试会话中的所有断点列表。
+
 ### 重构
 - 项目结构优化。将 `src/mcpServerManager.ts` 拆分为 `src/managers/ProcessManager.ts`, `src/managers/IpcHandler.ts`, `src/vscode/DebuggerApiWrapper.ts` 等模块，并更新 `src/extension.ts`。将 `mcp-server/src/toolProviders/debuggerTools.ts` 拆分为 `mcp-server/src/toolProviders/debug/` 目录下的多个文件。提高了代码的可维护性和模块化程度。
 
