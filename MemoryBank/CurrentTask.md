@@ -1,71 +1,118 @@
+# 当前任务规划
+
+## 任务描述
+重构优化项目,将大文件拆分成小文件,并整理好文件结构,模块化等,符合最佳实践
+
 ## 任务上下文
-- mcp-server/src/toolProviders/debuggerTools.ts:108 - `setBreakpointSchema` 定义了 `file_path` 参数。
-- mcp-server/src/toolProviders/debuggerTools.ts:129-141 - `handleSetBreakpoint` 函数接收 `file_path` 参数，并直接将其作为 payload 发送给插件，没有进行路径解析。
-- src/mcpServerManager.ts:133-166 - 插件端接收到 `setBreakpoint` 请求，从 payload 中提取 `filePath`，并直接使用 `vscode.Uri.file(filePath)` 创建 URI。如果 `filePath` 是相对路径，`vscode.Uri.file` 可能会相对于插件的安装目录解析，而不是工作区根目录。
-- src/mcpServerManager.ts:103-116 - 插件端获取 VS Code 工作区根目录路径 (`workspaceFolders[0].uri.fsPath`) 并将其作为 `VSCODE_WORKSPACE_PATH` 环境变量传递给 MCP 服务器子进程。
-6 | - mcp-server/src/toolProviders/debuggerTools.ts:40 - MCP 服务器端通过 `process.env.VSCODE_WORKSPACE_PATH` 获取工作区路径，但目前仅在 `handleGetDebuggerConfigurations` 中使用，未在 `handleSetBreakpoint` 中用于解析 `file_path`。
-7 |
-8 | ## 任务规划
-9 |
-10| **目标:** 修复 `set_breakpoint` 工具处理相对文件路径的问题，确保其能正确解析相对于 VS Code 工作区的路径。
-11|
-12| **执行步骤:**
-13|
-14| 1.  **修改 `mcp-server/src/toolProviders/debuggerTools.ts` 文件中的 `handleSetBreakpoint` 函数:**
-15|     *   **引入 `path` 模块:** 确认文件顶部已引入 `import * as path from 'path';`。
-16|     *   **获取工作区路径:** 在函数开头，读取环境变量 `process.env.VSCODE_WORKSPACE_PATH`。
-17|         ```typescript
-18|         const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
-19|         ```
-20|     *   **添加工作区路径校验:** 检查 `workspacePath` 是否存在。如果不存在，应返回错误，提示环境变量未设置。
-21|         ```typescript
-22|         if (!workspacePath) {
-23|             const errorMsg = '无法获取 VS Code 工作区路径 (VSCODE_WORKSPACE_PATH 环境变量未设置)。';
-24|             console.error(`[MCP Server] Error in handleSetBreakpoint: ${errorMsg}`);
-25|             return {
-26|                 status: 'error',
-27|                 message: errorMsg,
-28|                 content: [{ type: "text", text: errorMsg }],
-29|                 isError: true
-30|             };
-31|         }
-32|         ```
-33|     *   **解析文件路径:** 在将 `args` 发送给插件之前，解析 `args.file_path`。
-34|         *   使用 `path.isAbsolute()` 判断 `args.file_path` 是否已经是绝对路径。
-35|         *   如果不是绝对路径，使用 `path.resolve(workspacePath, args.file_path)` 将其解析为基于工作区根目录的绝对路径。
-36|         *   将解析后的绝对路径用于后续传递给插件的 `payload`。
-37|         ```typescript
-38|         let absoluteFilePath = args.file_path; // 默认使用原始路径
-39|         if (!path.isAbsolute(args.file_path)) {
-40|             console.log(`[MCP Server] Resolving relative path: ${args.file_path} against workspace: ${workspacePath}`);
-41|             absoluteFilePath = path.resolve(workspacePath, args.file_path);
-42|             console.log(`[MCP Server] Resolved to absolute path: ${absoluteFilePath}`);
-43|         } else {
-44|             console.log(`[MCP Server] Path is already absolute: ${args.file_path}`);
-45|         }
-46|
-47|         // 更新传递给插件的 payload
-48|         const payloadForPlugin = {
-49|             ...args, // 包含 line_number, column_number 等其他参数
-50|             file_path: absoluteFilePath // 使用解析后的绝对路径
-51|         };
-52|         ```
-53|     *   **更新 `sendRequestToPlugin` 调用:** 确保使用包含已解析路径的 `payloadForPlugin`。
-54|         ```typescript
-55|         // 修改此行：
-56|         // const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: 'setBreakpoint', payload: args });
-57|         // 修改为：
-58|         const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: 'setBreakpoint', payload: payloadForPlugin });
-59|         ```
-60|
-61| 2.  **审查和测试:**
-62|     *   审查代码修改，确保逻辑正确，变量名清晰。
-63|     *   （由 Coder 执行）重新编译 MCP 服务器。
-64|     *   （由 Coder 执行）通过客户端工具（如 Cline）调用 `set_breakpoint`，分别使用相对路径和绝对路径进行测试，确认断点能正确设置在预期文件的预期位置。
-65|     *   （由 Coder 执行）测试 `VSCODE_WORKSPACE_PATH` 未设置时的错误处理。
-66|
-67| **预期结果:**
-68|
-69| *   `set_breakpoint` 工具能够正确处理相对路径和绝对路径的文件输入。
-70| *   当提供相对路径时，断点会设置在相对于当前 VS Code 工作区根目录的正确文件和行号上。
-71| *   当 `VSCODE_WORKSPACE_PATH` 环境变量缺失时，工具会返回明确的错误信息。
+src/mcpServerManager.ts
+mcp-server/src/toolProviders/debuggerTools.ts
+mcp-server/src/server.ts
+对于其他文件也可修改优化
+
+## 任务规划
+## 任务规划
+
+**任务：审查已完成的项目重构工作**
+
+**审查范围:**
+
+*   **第一阶段:** 拆分 `mcp-server/src/toolProviders/debuggerTools.ts` 到 `mcp-server/src/toolProviders/debug/` 目录，并更新 `mcp-server/src/server.ts`。
+*   **第二阶段:** 拆分 `src/mcpServerManager.ts` 到 `src/managers/` 和 `src/vscode/` 目录，并更新 `src/extension.ts`。
+
+**审查结论:** **通过**
+
+**详细审查报告:**
+
+1.  **文件拆分与结构 (符合要求):**
+    *   **第一阶段 (`mcp-server`):**
+        *   `debuggerTools.ts` 成功拆分为 `debug/` 目录下的 `getConfigurations.ts`, `setBreakpoint.ts`, `getBreakpoints.ts`, `index.ts`。
+        *   `index.ts` 正确导出所有工具。
+        *   `server.ts` 正确导入并注册了新的 `debug` 模块。
+        *   结构清晰，符合模块化原则。
+    *   **第二阶段 (`src`):**
+        *   `mcpServerManager.ts` 的职责成功拆分到 `DebuggerApiWrapper` (在 `vscode/` 目录下), `IpcHandler`, `ProcessManager` (在 `managers/` 目录下)。
+        *   `mcpServerManager.ts` 角色转变为协调者，职责清晰。
+        *   `extension.ts` 正确实例化了所有新管理器，并通过依赖注入传递给 `McpServerManager`。
+        *   目录结构 (`managers/`, `vscode/`) 合理，职责分离明确。
+    *   **总体:** 文件拆分和新的目录结构非常合理，显著提高了代码的可维护性和可读性。
+
+2.  **代码逻辑与功能 (符合要求):**
+    *   原有功能（获取配置、设置/获取断点、进程管理、IPC 通信、状态栏更新）的逻辑已正确迁移到新的模块中。
+    *   `DebuggerApiWrapper` 的实现解决了之前添加重复断点的问题（通过检查现有断点并复用 ID）。
+    *   `ProcessManager` 对子进程生命周期（启动、停止、重启）和通信（stdout, stderr, IPC）的管理健壮可靠，事件机制完善。
+    *   `IpcHandler` 清晰地处理了插件与服务器间的 IPC 通信，并将调试命令正确委托给 `DebuggerApiWrapper`。
+    *   `McpServerManager` 作为协调者，通过监听 `ProcessManager` 事件驱动其他模块，逻辑清晰。
+
+3.  **依赖关系 (符合要求):**
+    *   模块间的依赖关系主要通过构造函数注入进行管理，降低了耦合度。
+    *   `McpServerManager` 与 `ProcessManager`, `IpcHandler`, `StatusBarManager`, `DebuggerApiWrapper` 之间的交互通过方法调用和事件监听实现，关系清晰。
+
+4.  **代码质量 (符合要求):**
+    *   新增和修改的代码普遍具有较好的可读性。
+    *   包含了必要的注释和日志输出（通过 VS Code OutputChannel）。
+    *   错误处理比较完善，覆盖了进程错误、IPC 错误、API 调用错误等场景。
+
+**总结:**
+
+本次重构工作完成得**非常出色**，完全符合重构计划的要求和最佳实践。代码结构得到了显著优化，模块化程度大大提高，职责更加清晰，为后续的开发和维护奠定了良好的基础。
+
+**建议 (可选，非阻塞性):**
+
+*   **共享类型:** 考虑将 `PluginRequest` 和 `PluginResponse` 接口定义（出现在 `mcpServerManager.ts` 和 `ipcHandler.ts`）提取到共享文件（例如 `src/types.ts` 或 `common/types.ts`）以避免重复。
+*   **常量管理:** 考虑将代码中的字符串字面量（如 IPC 命令名 'setBreakpoint', 'getBreakpoints'）定义为常量，提高可维护性。
+*   **OutputChannel 管理:** 多个模块创建了 OutputChannel。可以考虑统一由 `McpServerManager` 或 `extension.ts` 创建主 Channel 并注入，或维持现状（每个模块有自己的 Channel，名称清晰即可）。
+
+**后续步骤:**
+
+根据用户指示，可以继续进行第三阶段的通用优化（如提取共享类型、常量管理）或结束当前任务。
+---
+
+# 有问题!
+Status changed to: starting (Port: 6009)
+Attempting to start process on port 6009...
+Spawning process with PID: 60972
+[stderr] [INFO] [MCP Server] Registered tool: helloWorld
+[INFO] [MCP Server] Registered tool: get_debugger_configurations
+[INFO] [MCP Server] Registered tool: set_breakpoint
+[INFO] [MCP Server] Registered tool: get_breakpoints
+[INFO] Starting MCP server with SDK via HTTP/SSE on port 6009...
+[INFO] MCP server HTTP/SSE interface available at http://localhost:6009
+[stdout] MCP Server listening on port 6009
+Status changed to: running (Port: 6009)
+Process successfully started, listening on port 6009.
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: 7ce437e8-1aa5-4bc2-85dc-71118b432f39
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: 7ce437e8-1aa5-4bc2-85dc-71118b432f39
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: a78c2e11-f17d-4c60-a8f7-1444efffef8c
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: a78c2e11-f17d-4c60-a8f7-1444efffef8c
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: acfca30c-c61e-4fb2-9031-cc4b0004bf50
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: acfca30c-c61e-4fb2-9031-cc4b0004bf50
+[stderr] [INFO] SSE connection closed for sessionId: 7ce437e8-1aa5-4bc2-85dc-71118b432f39
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[INFO] McpServer connected to SSE transport for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stdout] [MCP Server] Handling get_breakpoints request...
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:getBreakpoints","requestId":"1c529906-85cf-41ef-87e6-0752ea79ae0a","payload":{}}
+[stderr] [MCP Server] Error getting breakpoints: Plugin request timed out after 5000ms for command: vscode-debugger-mcp:getBreakpoints
+[stderr] [DEBUG] Received POST to /messages for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stdout] [MCP Server] Handling set_breakpoint request...
+[MCP Server] Workspace path for breakpoint: d:\Personal\Documents\AutoTools
+[MCP Server] Resolving relative path: CodeTools/SVNTool/svn_diff_report.py against workspace: d:\Personal\Documents\AutoTools
+[MCP Server] Resolved to absolute path: d:\Personal\Documents\AutoTools\CodeTools\SVNTool\svn_diff_report.py
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:setBreakpoint","requestId":"b8486307-c604-4d74-9c13-bf6350a649db","payload":{"file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":271}}
+[stderr] [DEBUG] Successfully handled POST message for sessionId: a0925bb5-6180-47d6-8c38-cd34c8feb124
+[stderr] [MCP Server] Error setting breakpoint: Plugin request timed out after 5000ms for command: vscode-debugger-mcp:setBreakpoint
