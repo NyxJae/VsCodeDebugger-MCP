@@ -18,8 +18,8 @@ export type SetBreakpointArgs = z.infer<typeof setBreakpointSchema>;
 
 // 定义 set_breakpoint 工具的返回值类型 (符合 MCP SDK 要求)
 type SetBreakpointResult =
-    | { status: typeof Constants.STATUS_SUCCESS; content: { type: "text", text: string }[] } // 成功时返回 breakpoint 信息的 JSON 字符串
-    | { status: typeof Constants.STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true }; // 失败时返回错误信息
+    | { status: typeof Constants.IPC_STATUS_SUCCESS; content: { type: "text", text: string }[] } // 使用本地常量
+    | { status: typeof Constants.IPC_STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true }; // 使用本地常量
 
 /**
  * 处理 set_breakpoint MCP 工具请求。
@@ -40,7 +40,7 @@ export async function handleSetBreakpoint(
         const errorMsg = '无法获取 VS Code 工作区路径 (VSCODE_WORKSPACE_PATH 环境变量未设置)。';
         console.error(`[MCP Server] Error in handleSetBreakpoint: ${errorMsg}`);
         return {
-            status: Constants.STATUS_ERROR,
+            status: Constants.IPC_STATUS_ERROR, // 使用本地常量
             message: errorMsg,
             content: [{ type: "text", text: errorMsg }],
             isError: true
@@ -70,7 +70,7 @@ export async function handleSetBreakpoint(
         // 使用常量作为命令字符串
         const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: Constants.IPC_COMMAND_SET_BREAKPOINT, payload: payloadForPlugin }); // 使用更新后的 payload
 
-        if (pluginResponse.status === Constants.STATUS_SUCCESS && pluginResponse.payload && pluginResponse.payload.breakpoint) {
+        if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload && pluginResponse.payload.breakpoint) { // 使用本地常量
             // 插件成功设置断点并返回信息
             console.log('[MCP Server] Successfully set breakpoint via plugin.');
             // 确保返回的 breakpoint 结构符合预期
@@ -95,7 +95,7 @@ export async function handleSetBreakpoint(
                  };
                  const successText = JSON.stringify(breakpointInfo, null, 2);
                  return {
-                     status: Constants.STATUS_SUCCESS,
+                     status: Constants.IPC_STATUS_SUCCESS, // 使用本地常量
                      content: [{ type: "text", text: successText }]
                  };
              } else {
@@ -103,18 +103,18 @@ export async function handleSetBreakpoint(
                  const errorMessage = 'Plugin returned breakpoint data in an unexpected format.';
                  console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload.breakpoint);
                  return {
-                     status: Constants.STATUS_ERROR,
+                     status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                      message: errorMessage,
                      content: [{ type: "text", text: errorMessage }],
                      isError: true
                  };
              }
-         } else if (pluginResponse.status === Constants.STATUS_ERROR) {
+         } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) { // 使用本地常量
              // 插件返回失败状态
              const errorMessage = pluginResponse.error?.message || 'Plugin failed to set breakpoint with an unspecified error.';
              console.error(`[MCP Server] Plugin reported error setting breakpoint: ${errorMessage}`);
              return {
-                 status: Constants.STATUS_ERROR,
+                 status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                  message: errorMessage, // 使用提取的字符串消息
                  content: [{ type: "text", text: errorMessage }], // 使用提取的字符串消息
                  isError: true
@@ -124,7 +124,7 @@ export async function handleSetBreakpoint(
               const errorMessage = 'Plugin returned success but payload format was unexpected.';
               console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload);
               return {
-                  status: Constants.STATUS_ERROR,
+                  status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                   message: errorMessage,
                   content: [{ type: "text", text: errorMessage }],
                   isError: true
@@ -136,7 +136,7 @@ export async function handleSetBreakpoint(
          const errorMessage = error?.message || "Failed to set breakpoint due to communication error or unexpected issue.";
          console.error(`[MCP Server] Error setting breakpoint: ${errorMessage}`);
          return {
-             status: Constants.STATUS_ERROR, // 使用常量
+             status: Constants.IPC_STATUS_ERROR, // 使用本地常量
              message: errorMessage, // 使用提取的字符串消息
              content: [{ type: "text", text: errorMessage }], // 使用提取的字符串消息
              isError: true

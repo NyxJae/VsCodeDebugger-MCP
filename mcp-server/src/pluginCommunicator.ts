@@ -9,22 +9,22 @@ export interface PluginRequest {
     payload?: any; // 请求携带的数据
 }
 
-// 定义 PluginResponse 接口 (与 src/mcpServerManager.ts 一致)
-export interface PluginResponse {
+// 定义 PluginResponse 接口 (使其支持泛型)
+export interface PluginResponse<P = any, E = { message: string }> {
     type: 'response';
     requestId: string; // 响应对应的请求标识符
     status: 'success' | 'error'; // 标识请求是否成功
-    payload?: any; // 响应携带的数据
-    error?: { message: string }; // 如果失败，包含错误信息对象
+    payload?: P; // 响应携带的数据 (泛型)
+    error?: E; // 如果失败，包含错误信息对象 (泛型)
 }
 
-// 用于存储待处理的请求 Promise
-const pendingRequests = new Map<string, { resolve: (response: PluginResponse) => void, reject: (error: Error) => void, timeout: NodeJS.Timeout }>();
+// 用于存储待处理的请求 Promise (更新 resolve 类型以匹配泛型 PluginResponse)
+const pendingRequests = new Map<string, { resolve: (response: PluginResponse<any>) => void, reject: (error: Error) => void, timeout: NodeJS.Timeout }>();
 
-// 向插件发送请求
+// 向插件发送请求 (更新返回值类型以匹配泛型 PluginResponse)
 // 注意：输入参数的 'type' 字段将被映射到 PluginRequest 的 'command' 字段
-export function sendRequestToPlugin(request: { type: string; payload?: any }, timeoutMs: number = 5000): Promise<PluginResponse> {
-    return new Promise((resolve, reject) => {
+export function sendRequestToPlugin<T = any>(request: { type: string; payload?: any }, timeoutMs: number = 5000): Promise<PluginResponse<T>> {
+    return new Promise<PluginResponse<T>>((resolve, reject) => { // 返回泛型 Promise
         const requestId = uuidv4(); // 生成唯一 ID
         const fullRequest: PluginRequest = {
             type: 'request',
@@ -55,8 +55,8 @@ export function sendRequestToPlugin(request: { type: string; payload?: any }, ti
     });
 }
 
-// 处理来自插件的响应
-export function handlePluginResponse(response: PluginResponse): void {
+// 处理来自插件的响应 (更新参数类型以匹配泛型 PluginResponse)
+export function handlePluginResponse(response: PluginResponse<any>): void {
     // 基本类型检查，确保是预期的响应结构
     if (response?.type !== 'response' || !response.requestId) {
         console.error(`[MCP Server] Received invalid IPC response:`, response);

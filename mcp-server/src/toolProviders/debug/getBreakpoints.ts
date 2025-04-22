@@ -18,7 +18,7 @@ export type GetBreakpointsArgs = z.infer<typeof getBreakpointsSchema>;
 export async function handleGetBreakpoints(
     args: GetBreakpointsArgs, // 使用推断的类型
     extra: any
-): Promise<{ status: typeof Constants.STATUS_SUCCESS; content: { type: "text", text: string }[] } | { status: typeof Constants.STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true }> { // 明确返回类型以匹配 SDK
+): Promise<{ status: typeof Constants.IPC_STATUS_SUCCESS; content: { type: "text", text: string }[] } | { status: typeof Constants.IPC_STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true }> { // 使用本地常量
     console.log('[MCP Server] Handling get_breakpoints request...');
 
     try {
@@ -28,7 +28,7 @@ export async function handleGetBreakpoints(
 
         console.log('[MCP Server] Received response from extension for get_breakpoints:', JSON.stringify(pluginResponse, null, 2));
 
-        if (pluginResponse.status === Constants.STATUS_SUCCESS && pluginResponse.payload) {
+        if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload) { // 使用本地常量
             // 插件成功获取断点并返回信息
             const { timestamp, breakpoints } = pluginResponse.payload;
 
@@ -42,7 +42,7 @@ export async function handleGetBreakpoints(
                 };
                 const successText = JSON.stringify(successPayload, null, 2);
                 return {
-                    status: Constants.STATUS_SUCCESS,
+                    status: Constants.IPC_STATUS_SUCCESS, // 使用本地常量
                     content: [{ type: "text", text: successText }]
                 };
             } else {
@@ -50,18 +50,18 @@ export async function handleGetBreakpoints(
                 const errorMessage = 'Plugin returned breakpoint data in an unexpected format.';
                 console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload);
                 return {
-                    status: Constants.STATUS_ERROR,
+                    status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                     message: errorMessage,
                     content: [{ type: "text", text: errorMessage }], // 添加 content
                     isError: true // 添加 isError
                 };
             }
-        } else if (pluginResponse.status === Constants.STATUS_ERROR) {
+        } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) { // 使用本地常量
             // 插件返回失败状态
             const errorMessage = pluginResponse.error?.message || 'Plugin failed to get breakpoints with an unspecified error.';
             console.error(`[MCP Server] Plugin reported error getting breakpoints: ${errorMessage}`);
             return {
-                status: Constants.STATUS_ERROR,
+                status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                 message: errorMessage,
                 content: [{ type: "text", text: errorMessage }], // 添加 content
                 isError: true // 添加 isError
@@ -71,7 +71,7 @@ export async function handleGetBreakpoints(
             const errorMessage = 'Plugin returned success but payload format was unexpected or missing.';
             console.error(`[MCP Server] ${errorMessage}`, pluginResponse.payload);
             return {
-                status: Constants.STATUS_ERROR,
+                status: Constants.IPC_STATUS_ERROR, // 使用本地常量
                 message: errorMessage,
                 content: [{ type: "text", text: errorMessage }], // 添加 content
                 isError: true // 添加 isError
@@ -83,7 +83,7 @@ export async function handleGetBreakpoints(
         const errorMessage = error?.message || "Failed to get breakpoints due to communication error or unexpected issue.";
         console.error(`[MCP Server] Error getting breakpoints: ${errorMessage}`);
         return {
-            status: Constants.STATUS_ERROR, // 使用常量
+            status: Constants.IPC_STATUS_ERROR, // 使用本地常量
             message: `Error communicating with VS Code extension: ${errorMessage}`,
             content: [{ type: "text", text: `Error communicating with VS Code extension: ${errorMessage}` }], // 添加 content
             isError: true // 添加 isError

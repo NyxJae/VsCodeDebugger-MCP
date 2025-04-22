@@ -19,8 +19,8 @@ interface LaunchJson {
 // 定义 get_debugger_configurations 工具处理函数的类型
 type GetDebuggerConfigurationsArgs = Record<string, never>; // 空对象表示无输入参数
 type GetDebuggerConfigurationsResult =
-    | { status: typeof Constants.STATUS_SUCCESS; content: { type: "text", text: string }[] }
-    | { status: typeof Constants.STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true };
+    | { status: typeof Constants.IPC_STATUS_SUCCESS; content: { type: "text", text: string }[] } // 使用本地常量
+    | { status: typeof Constants.IPC_STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError: true }; // 使用本地常量
 
 /**
  * 处理 get_debugger_configurations MCP 工具请求。
@@ -37,7 +37,7 @@ export async function handleGetDebuggerConfigurations(
     if (!workspacePath) {
         const errorMsg = '无法获取 VS Code 工作区路径，请确保插件已正确设置 VSCODE_WORKSPACE_PATH 环境变量。';
         console.error(`[MCP Server] Error: ${errorMsg}`);
-        return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+        return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
     }
     console.log(`[MCP Server] Workspace path received: ${workspacePath}`);
 
@@ -67,31 +67,31 @@ export async function handleGetDebuggerConfigurations(
 
                 console.log(`[MCP Server] Found ${resultConfigurations.length} valid configurations.`);
                 const configurationsText = JSON.stringify(resultConfigurations, null, 2);
-                return { status: Constants.STATUS_SUCCESS, content: [{ type: "text", text: configurationsText }] };
+                return { status: Constants.IPC_STATUS_SUCCESS, content: [{ type: "text", text: configurationsText }] }; // 使用本地常量
             } else {
                 const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
                 console.error(`[MCP Server] Error: ${errorMsg}`);
-                return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+                return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
             }
         } catch (parseError) {
             if (parseError instanceof SyntaxError) {
                 const errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
                 console.error(`[MCP Server] Error parsing launch.json: ${errorMsg}`);
-                return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+                return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
             }
             const errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
             console.error(`[MCP Server] ${errorMsg}`);
-            return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+            return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
         }
     } catch (readError: any) {
         if (readError.code === 'ENOENT') {
             const errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
             console.warn(`[MCP Server] ${errorMsg}`);
-            return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+            return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
         } else {
             const errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
             console.error(`[MCP Server] Error reading launch.json: ${errorMsg}`);
-            return { status: Constants.STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true };
+            return { status: Constants.IPC_STATUS_ERROR, message: errorMsg, content: [{ type: "text", text: errorMsg }], isError: true }; // 使用本地常量
         }
     }
 }

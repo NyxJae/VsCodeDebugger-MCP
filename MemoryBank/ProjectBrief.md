@@ -10,11 +10,11 @@ vscode 插件部分不需要 webview
 ## 功能模块
 ## 项目文档目录
 - [VS Code插件开发指南](Docs/Doc_VsCode_Extention.md) - VS Code插件开发基础知识和API指南
-- [MCP服务器开发指南](Docs/Doc_MCP.md) - MCP服务器设计、实现和使用说明
 - [通用文档](Docs/Doc_Common.md) - 记录项目经验和收获
 - [变更日志](Docs/ChangeLog.md) - 记录项目版本变更历史
 - [@modelcontextprotocol/sdk文档](Docs/Doc_MCP_SDK.md) - MCP SDK使用说明和API参考
 - [项目结构文档](Docs/Doc_Project_Structure.md) - 描述项目结构和模块职责
+- [MCP官方SDK文档](../Docs/Doc_MCP_README.md)
 ## 当前整体需求
 1. 前端 管理MCP服务器
    1. 启动MCP服务器
@@ -467,4 +467,109 @@ vscode 插件部分不需要 webview
 - 开发获取所有断点工具
 - 重构优化项目,将大文件拆分成小文件,并整理好文件结构,模块化等,符合最佳实践,上下文收集者在项目中每个文件都读取
 - 开发删除断点工具
+- 开发启动调试工具
 ### 当前任务
+- 启动调试工具 有问题 调试启动成功了,断点也命中了,应该mcp工具会返回调试信息,但没有,直到触发了客户端自己的超时
+- Status changed to: starting (Port: 6009)
+Attempting to start process on port 6009...
+Spawning process with PID: 21608
+[stderr] [INFO] [MCP Server] Registered tool: get_debugger_configurations
+[stderr] [INFO] [MCP Server] Registered tool: set_breakpoint
+[INFO] [MCP Server] Registered tool: get_breakpoints
+[INFO] [MCP Server] Registered tool: remove_breakpoint
+[INFO] [MCP Server] Registered tool: start_debugging
+[stderr] [INFO] Starting MCP server with SDK via HTTP/SSE on port 6009...
+[stdout] MCP Server listening on port 6009
+Status changed to: running (Port: 6009)
+Process successfully started, listening on port 6009.
+[stderr] [INFO] MCP server HTTP/SSE interface available at http://localhost:6009
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[stderr] [INFO] SSE transport created with sessionId: b8950d0d-bfeb-4643-82f9-2a80dc4b455e
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: b8950d0d-bfeb-4643-82f9-2a80dc4b455e
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: 24923130-7bd8-4262-84ec-10d9a5ef03c9
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: 24923130-7bd8-4262-84ec-10d9a5ef03c9
+[stderr] [INFO] SSE connection closed for sessionId: b8950d0d-bfeb-4643-82f9-2a80dc4b455e
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[INFO] McpServer connected to SSE transport for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stdout] [MCP Server] Handling get_debugger_configurations request...
+[MCP Server] Workspace path received: d:\Personal\Documents\AutoTools
+[MCP Server] Attempting to read launch.json from: d:\Personal\Documents\AutoTools\.vscode\launch.json
+[stdout] [MCP Server] Successfully read launch.json content.
+[stdout] [MCP Server] Successfully parsed launch.json content (after removing comments).
+[MCP Server] Found 1 valid configurations.
+[stderr] [DEBUG] Received POST to /messages for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+[stdout] [MCP Server] Handling start_debugging request...
+[MCP Server] Sending vscode-debugger-mcp:startDebuggingRequest for config: Python 调试程序: 当前文件
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:startDebuggingRequest","requestId":"d1d06a8f-7d25-47c9-92ad-284be6116d49","payload":{"configurationName":"Python 调试程序: 当前文件","noDebug":false}}
+[stderr] [DEBUG] Successfully handled POST message for sessionId: cf8829f0-54aa-4ca8-a73b-243352b2e4b0
+MCP Status changed to: starting
+extensionHostProcess.js:179
+MCP Status changed to: running (Port: 6009)
+extensionHostProcess.js:179
+[subtasks] adding task 57e5932a-83e1-430f-81c1-bb2888411997.c4247b22 to stack
+extensionHostProcess.js:179
+[subtasks] parent task 57e5932a-83e1-430f-81c1-bb2888411997.c4247b22 instantiated
+extensionHostProcess.js:179
+[subtasks] task 57e5932a-83e1-430f-81c1-bb2888411997.c4247b22 starting
+extensionHostProcess.js:179
+[Cline#getCheckpointService] initializing checkpoints service
+extensionHostProcess.js:179
+2
+[Cline#getCheckpointService] initializing shadow git
+extensionHostProcess.js:179
+2
+[t#create] git = 2.47.0
+extensionHostProcess.js:179
+2
+[t#initShadowGit] creating shadow git repo at c:\Users\Administrator\AppData\Roaming\Code\User\globalStorage\rooveterinaryinc.roo-cline\tasks\57e5932a-83e1-430f-81c1-bb2888411997\checkpoints
+extensionHostProcess.js:179
+2
+[t#initShadowGit] initialized shadow repo with base commit 0e8dc57e5b548e459a6313e54499e94231c3f41c in 1030ms
+extensionHostProcess.js:179
+2
+[Cline#getCheckpointService] service initialized
+extensionHostProcess.js:179
+2
+[Cline#getCheckpointService] no checkpoints found, saving initial checkpoint
+extensionHostProcess.js:179
+2
+[t#saveCheckpoint] starting checkpoint save
+extensionHostProcess.js:179
+2
+[t#saveCheckpoint] found no changes to commit in 252ms
+extensionHostProcess.js:179
+[Plugin IPC Handler] Handling incoming message: {type: 'request', command: 'vscode-debugger-mcp:startDebuggingRequest', requestId: '337440a5-847d-49ef-84ab-d0a04d1f5ed7', payload: {…}}
+extensionHostProcess.js:179
+[DebuggerApiWrapper] Starting debug request: start-0 for Python 调试程序: 当前文件
+extensionHostProcess.js:179
+[DebuggerApiWrapper] Calling vscode.debug.startDebugging for Python 调试程序: 当前文件
+extensionHostProcess.js:179
+[DebuggerApiWrapper] createDebugAdapterTracker called for session 92dbee3f-e7ea-4d72-ac8e-44c1c9279993 (name: Python 调试程序: 当前文件, type: debugpy)
+extensionHostProcess.js:179
+[DebuggerApiWrapper] No pending request found for session 92dbee3f-e7ea-4d72-ac8e-44c1c9279993 in createDebugAdapterTracker. Tracker not created.
+extensionHostProcess.js:179
+[TerminalRegistry] Shell execution started: {hasExecution: true, command: " & 'd:\\ProgramData\\anaconda3\\envs\\simple…ls\\CodeTools\\SVNTool\\svn_diff_report.py' ", terminalId: undefined}
+extensionHostProcess.js:179
+[TerminalRegistry] Shell execution started, but not from a Roo-registered terminal: {terminal: {…}, shellIntegration: {…}, execution: {…}}
+extensionHostProcess.js:179
+[DebuggerApiWrapper] onDidStartDebugSession: Received session.id=92dbee3f-e7ea-4d72-ac8e-44c1c9279993, session.name=Python 调试程序: 当前文件, config.name=Python 调试程序: 当前文件
+extensionHostProcess.js:179
+[DebuggerApiWrapper] Pending requests before association: (1) [{…}]
+extensionHostProcess.js:179
+[DebuggerApiWrapper] Found matching pending request start-0 for session 92dbee3f-e7ea-4d72-ac8e-44c1c9279993. Associating sessionId.
+extensionHostProcess.js:179
+[DebuggerApiWrapper] vscode.debug.startDebugging call succeeded for Python 调试程序: 当前文件. Request ID: start-0. Waiting for events...

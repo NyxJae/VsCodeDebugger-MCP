@@ -2,5 +2,6 @@
 export * from './getConfigurations';
 export * from './setBreakpoint';
 export * from './getBreakpoints';
-export * from './removeBreakpoint'; // Exports handleRemoveBreakpoint, RemoveBreakpointInputSchema, BaseRemoveBreakpointInputSchema, RemoveBreakpointInput
+export * from './removeBreakpoint';
+export * from './startDebugging'; // 新增导出 startDebugging 相关内容
 // 确保导出了所有需要被外部使用的函数、类型和 Schema

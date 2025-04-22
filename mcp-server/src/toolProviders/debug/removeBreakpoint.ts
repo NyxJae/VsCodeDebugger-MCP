@@ -2,7 +2,10 @@
 import { z } from 'zod';
 // Removed ToolInputValidationException import as error handling follows setBreakpoint pattern
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator'; // Import sendRequestToPlugin
-import { IPC_COMMAND_REMOVE_BREAKPOINT, STATUS_SUCCESS, STATUS_ERROR } from '../../constants'; // Import necessary constants
+import * as Constants from '../../constants'; // Import local constants
+// 注意：PluginResponse 类型现在应该从本地 types.ts 导入
+// RemoveBreakpointInput 是在此文件内部定义的，不需要从外部导入
+import type { PluginResponse as LocalPluginResponse } from '../../types'; // 导入本地类型，重命名避免冲突
 
 // --- Schema Definition ---
 const LocationSchema = z.object({
@@ -37,9 +40,10 @@ export type RemoveBreakpointInput = z.infer<typeof BaseRemoveBreakpointInputSche
 
 // --- Tool Handler ---
 // Define the expected structure for the result, including the content field
+// 使用本地常量定义状态
 type RemoveBreakpointResult =
-    | { status: typeof STATUS_SUCCESS; message?: string; content: { type: "text", text: string }[] } // Success
-    | { status: typeof STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError?: boolean }; // Error, isError is optional but good practice
+    | { status: typeof Constants.IPC_STATUS_SUCCESS; message?: string; content: { type: "text", text: string }[] } // Success
+    | { status: typeof Constants.IPC_STATUS_ERROR; message: string; content: { type: "text", text: string }[]; isError?: boolean }; // Error
 
 export async function handleRemoveBreakpoint(params: unknown): Promise<RemoveBreakpointResult> {
   let validatedParams: RemoveBreakpointInput;
@@ -52,12 +56,12 @@ export async function handleRemoveBreakpoint(params: unknown): Promise<RemoveBre
       const fullMessage = `输入参数校验失败: ${errorMessage}`;
       console.error(`[MCP Server] Validation Error in handleRemoveBreakpoint: ${fullMessage}`);
       // 返回 refine 的错误消息给客户端
-      return { status: STATUS_ERROR, message: fullMessage, content: [{ type: "text", text: fullMessage }], isError: true };
+      return { status: Constants.IPC_STATUS_ERROR, message: fullMessage, content: [{ type: "text", text: fullMessage }], isError: true }; // 使用常量
     }
     // 处理其他非 Zod 错误
     const unexpectedErrorMessage = '处理输入参数时发生未知错误';
     console.error(`[MCP Server] Unexpected Error parsing params in handleRemoveBreakpoint: ${error}`);
-    return { status: STATUS_ERROR, message: unexpectedErrorMessage, content: [{ type: "text", text: unexpectedErrorMessage }], isError: true };
+    return { status: Constants.IPC_STATUS_ERROR, message: unexpectedErrorMessage, content: [{ type: "text", text: unexpectedErrorMessage }], isError: true }; // 使用常量
   }
 
   // --- Manual validation removed, handled by .refine() ---
@@ -65,26 +69,27 @@ export async function handleRemoveBreakpoint(params: unknown): Promise<RemoveBre
   try {
     // 通过 IPC 请求插件执行移除操作, using sendRequestToPlugin
     // validatedParams 已经通过了包括 refine 在内的所有校验
-    const response: PluginResponse = await sendRequestToPlugin({
-      type: IPC_COMMAND_REMOVE_BREAKPOINT, // Use 'type' as per setBreakpoint example
-      payload: validatedParams, // Use 'payload' as per setBreakpoint example
+    // 使用本地类型 LocalPluginResponse
+    const response: LocalPluginResponse = await sendRequestToPlugin({
+      type: Constants.IPC_COMMAND_REMOVE_BREAKPOINT, // 使用本地常量
+      payload: validatedParams,
     });
 
-    if (response.status === STATUS_SUCCESS) {
+    if (response.status === Constants.IPC_STATUS_SUCCESS) { // 使用本地常量
       console.log('[MCP Server] Successfully removed breakpoint via plugin.');
-      const successMessage = typeof response.payload?.message === 'string' ? response.payload.message : '断点移除操作已成功请求。'; // Slightly better default message
-      return { status: STATUS_SUCCESS, message: successMessage, content: [{ type: "text", text: successMessage }] };
+      const successMessage = typeof response.payload?.message === 'string' ? response.payload.message : '断点移除操作已成功请求。';
+      return { status: Constants.IPC_STATUS_SUCCESS, message: successMessage, content: [{ type: "text", text: successMessage }] }; // 使用本地常量
     } else {
       // Plugin returned an error status
       const errorMessage = response.error?.message || '插件移除断点时返回未知错误。';
       console.error(`[MCP Server] Plugin reported error removing breakpoint: ${errorMessage}`);
-      return { status: STATUS_ERROR, message: errorMessage, content: [{ type: "text", text: errorMessage }], isError: true };
+      return { status: Constants.IPC_STATUS_ERROR, message: errorMessage, content: [{ type: "text", text: errorMessage }], isError: true }; // 使用本地常量
     }
   } catch (error: any) {
     // IPC communication failed (e.g., timeout) or other unexpected error
     const commErrorMessage = error?.message || '与插件通信失败或发生未知错误。';
     const fullCommMessage = `移除断点时发生通信错误: ${commErrorMessage}`;
     console.error('[MCP Server] Error communicating with plugin for removeBreakpoint:', error);
-    return { status: STATUS_ERROR, message: fullCommMessage, content: [{ type: "text", text: fullCommMessage }], isError: true };
+    return { status: Constants.IPC_STATUS_ERROR, message: fullCommMessage, content: [{ type: "text", text: fullCommMessage }], isError: true }; // 使用本地常量
   }
 }

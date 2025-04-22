@@ -1,12 +1,44 @@
 import * as vscode from 'vscode';
-import * as path from 'path'; // 1. 引入 Node.js path 模块
-import { RemoveBreakpointParams, SetBreakpointParams } from '../types'; // 导入类型
-import { IPC_STATUS_SUCCESS, IPC_STATUS_ERROR } from '../constants'; // 导入状态常量
+import * as path from 'path';
+import {
+    RemoveBreakpointParams,
+    SetBreakpointParams,
+    StartDebuggingResponsePayload, // 新增
+    StopEventData,               // 新增
+    VariableInfo                 // 新增
+} from '../types';
+import { IPC_STATUS_SUCCESS, IPC_STATUS_ERROR } from '../constants';
+
+// --- 内部类型定义 ---
+interface PendingRequest {
+    configurationName: string; // 用于启动时匹配
+    resolve: (value: StartDebuggingResponsePayload) => void;
+    // reject 不再直接使用，通过 resolve 返回 error status
+    timeoutTimer: NodeJS.Timeout;
+    listeners: vscode.Disposable[];
+    trackerDisposable?: vscode.Disposable;
+    sessionId?: string; // 在 onDidStartDebugSession 中设置
+    isResolved: boolean; // 标记是否已被解决，防止重复处理
+}
 
 /**
  * 封装与 VS Code Debug API 的交互逻辑。
  */
 export class DebuggerApiWrapper {
+    private pendingStartRequests = new Map<string, PendingRequest>(); // key 是 requestId
+    private static nextRequestId = 0;
+
+    // --- 清理函数 ---
+    private cleanupRequest(requestId: string) {
+        const pendingRequest = this.pendingStartRequests.get(requestId);
+        if (pendingRequest) {
+            console.log(`[DebuggerApiWrapper] Cleaning up listeners for request: ${requestId}`);
+            clearTimeout(pendingRequest.timeoutTimer);
+            pendingRequest.listeners.forEach(d => d.dispose());
+            pendingRequest.trackerDisposable?.dispose();
+            this.pendingStartRequests.delete(requestId);
+        }
+    }
 
     /**
      * 添加断点。
@@ -273,4 +305,286 @@ export class DebuggerApiWrapper {
             return { status: IPC_STATUS_ERROR, message: `移除断点时发生错误: ${error.message || '未知 VS Code API 错误'}` };
         }
     }
+    // --- startDebuggingAndWait 实现 ---
+    public async startDebuggingAndWait(configurationName: string, noDebug: boolean): Promise<StartDebuggingResponsePayload> {
+        const requestId = `start-${DebuggerApiWrapper.nextRequestId++}`;
+        console.log(`[DebuggerApiWrapper] Starting debug request: ${requestId} for ${configurationName}`);
+
+        return new Promise<StartDebuggingResponsePayload>(async (resolve) => {
+            // ... 获取 folder, launchConfig, targetConfig 的逻辑不变 ...
+            let folder: vscode.WorkspaceFolder | undefined;
+            try {
+                folder = vscode.workspace.workspaceFolders?.[0];
+                if (!folder) {
+                    throw new Error('无法确定工作区文件夹。');
+                }
+            } catch (error: any) {
+                return resolve({ status: 'error', message: error.message });
+            }
+            const launchConfig = vscode.workspace.getConfiguration('launch', folder.uri);
+            const configurations = launchConfig.get<vscode.DebugConfiguration[]>('configurations') || [];
+            let targetConfig = configurations.find(conf => conf.name === configurationName);
+            if (!targetConfig) {
+              return resolve({ status: 'error', message: `找不到名为 '${configurationName}' 的调试配置。` });
+            }
+            if (noDebug) {
+              targetConfig = { ...targetConfig, noDebug: true };
+            }
+            // --- 结束获取配置逻辑 ---
+
+            const listeners: vscode.Disposable[] = [];
+            let trackerDisposable: vscode.Disposable | undefined;
+
+            // 封装的 resolve 函数，确保清理 (不变)
+            const resolveCleanup = (result: StartDebuggingResponsePayload) => {
+                // ... resolveCleanup 逻辑不变 ...
+                const pendingRequest = this.pendingStartRequests.get(requestId);
+                if (pendingRequest && !pendingRequest.isResolved) { // 防止重复 resolve
+                    pendingRequest.isResolved = true; // 标记为已解决
+                    this.cleanupRequest(requestId);
+                    resolve(result);
+                } else if (!pendingRequest) {
+                    console.warn(`[DebuggerApiWrapper] Attempted to resolve already cleaned up request: ${requestId}`);
+                } else {
+                    console.warn(`[DebuggerApiWrapper] Attempted to resolve already resolved request: ${requestId}`);
+                }
+            };
+
+            const timeout = 60000; // 插件内部超时 (不变)
+            const timeoutTimer = setTimeout(() => {
+                // ... timeout 逻辑不变 ...
+                console.log(`[DebuggerApiWrapper] Request ${requestId} timed out.`);
+                resolveCleanup({ status: 'timeout', message: `等待调试器首次停止或结束超时 (${timeout}ms)。` });
+            }, timeout);
+
+            const pendingRequest: PendingRequest = {
+                configurationName,
+                resolve: resolveCleanup,
+                timeoutTimer,
+                listeners,
+                isResolved: false,
+            };
+            this.pendingStartRequests.set(requestId, pendingRequest);
+
+
+            // --- 注册 Tracker Factory (修改核心逻辑) ---
+            trackerDisposable = vscode.debug.registerDebugAdapterTrackerFactory('*', {
+              createDebugAdapterTracker: (session: vscode.DebugSession) => {
+                // **修改点 1: 总是返回 Tracker，不再在此处查找 pendingRequest**
+                console.log(`[DebuggerApiWrapper] createDebugAdapterTracker called for session ${session.id} (name: ${session.name}, type: ${session.type}). Creating tracker instance.`);
+
+                // **修改点 2: Tracker 内部方法通过 session.id 查找请求**
+                return {
+                  onDidSendMessage: async (message) => {
+                    // **修改点 2.1: 在事件处理时查找请求**
+                    const currentRequestEntry = Array.from(this.pendingStartRequests.entries())
+                                                      .find(([reqId, req]) => req.sessionId === session.id);
+
+                    if (!currentRequestEntry) {
+                        // console.warn(`[DebuggerApiWrapper] onDidSendMessage: No pending request found for session ${session.id}. Ignoring message.`);
+                        return; // 不是我们关心的会话或请求已清理
+                    }
+                    const [currentRequestId, currentRequest] = currentRequestEntry;
+
+                    if (currentRequest.isResolved) {
+                        // console.warn(`[DebuggerApiWrapper] Request ${currentRequestId} already resolved, ignoring 'onDidSendMessage' event.`);
+                        return;
+                    }
+
+                    if (message.type === 'event' && message.event === 'stopped') {
+                      console.log(`[DebuggerApiWrapper] Tracker for request ${currentRequestId} received 'stopped' event.`);
+                      try {
+                        console.log(`[DebuggerApiWrapper] Building stop event data for request ${currentRequestId}...`);
+                        const stopEventData = await this.buildStopEventData(session, message.body);
+                        console.log(`[DebuggerApiWrapper] Stop event data built for ${currentRequestId}. Resolving promise.`);
+                        currentRequest.resolve({ status: 'stopped', data: stopEventData });
+                      } catch (error: any) {
+                        console.error(`[DebuggerApiWrapper] Error building stop event data for ${currentRequestId}:`, error);
+                        currentRequest.resolve({ status: 'error', message: `构建停止事件数据时出错: ${error.message}` });
+                      }
+                    }
+                  },
+                  onError: (error) => {
+                    // **修改点 2.2: 在事件处理时查找请求**
+                    const currentRequestEntry = Array.from(this.pendingStartRequests.entries())
+                                                      .find(([reqId, req]) => req.sessionId === session.id);
+                    if (!currentRequestEntry) {
+                        // console.warn(`[DebuggerApiWrapper] onError: No pending request found for session ${session.id}. Ignoring error.`);
+                        return;
+                    }
+                    const [currentRequestId, currentRequest] = currentRequestEntry;
+
+                    console.error(`[DebuggerApiWrapper] Debug adapter error for session ${session.id}, request ${currentRequestId}:`, error);
+                    if (currentRequest.isResolved) {
+                        // console.warn(`[DebuggerApiWrapper] Request ${currentRequestId} already resolved, ignoring 'onError' event.`);
+                        return;
+                    }
+                    currentRequest.resolve({ status: 'error', message: `调试适配器错误: ${error.message}` });
+                  },
+                  onExit: (code, signal) => {
+                    // **修改点 2.3: 在事件处理时查找请求**
+                    const currentRequestEntry = Array.from(this.pendingStartRequests.entries())
+                                                      .find(([reqId, req]) => req.sessionId === session.id);
+                    if (!currentRequestEntry) {
+                        // console.warn(`[DebuggerApiWrapper] onExit: No pending request found for session ${session.id}. Ignoring exit.`);
+                        return;
+                    }
+                    const [currentRequestId, currentRequest] = currentRequestEntry;
+
+                    console.log(`[DebuggerApiWrapper] Debug adapter exit for session ${session.id}, request ${currentRequestId}: code=${code}, signal=${signal}`);
+                    if (currentRequest.isResolved) {
+                        // console.warn(`[DebuggerApiWrapper] Request ${currentRequestId} already resolved, ignoring 'onExit' event.`);
+                        return;
+                    }
+                    // 只有在未被 stopped/terminated/error 解决时才处理 exit
+                    if (this.pendingStartRequests.has(currentRequestId)) { // 再次检查以防万一
+                       console.log(`[DebuggerApiWrapper] Resolving request ${currentRequestId} as error due to adapter exit.`);
+                       currentRequest.resolve({ status: 'error', message: `调试适配器意外退出 (code: ${code}, signal: ${signal})` });
+                    } else {
+                        console.warn(`[DebuggerApiWrapper] Request ${currentRequestId} not found in pending requests during onExit.`);
+                    }
+                  }
+                }; // 结束返回 Tracker 实例
+              } // 结束 createDebugAdapterTracker
+            }); // 结束 registerDebugAdapterTrackerFactory
+            pendingRequest.trackerDisposable = trackerDisposable; // 保存 tracker disposable
+
+            // --- 注册 Session 生命周期监听器 (不变) ---
+            listeners.push(vscode.debug.onDidStartDebugSession(session => {
+               // ... onDidStartDebugSession 逻辑不变，仍然需要关联 sessionId ...
+               console.log(`[DebuggerApiWrapper] onDidStartDebugSession: Received session.id=${session.id}, session.name=${session.name}, config.name=${session.configuration.name}`);
+               console.log(`[DebuggerApiWrapper] Pending requests before association:`, Array.from(this.pendingStartRequests.entries()).map(([id, req]) => ({ id, config: req.configurationName, sessionId: req.sessionId, resolved: req.isResolved })));
+
+               const matchingRequestEntry = Array.from(this.pendingStartRequests.entries())
+                   .find(([reqId, req]) =>
+                       req.configurationName === session.configuration.name &&
+                       !req.sessionId && // 确保只关联一次
+                       !req.isResolved
+                   );
+
+               if (matchingRequestEntry) {
+                   const [reqIdToAssociate, requestToAssociate] = matchingRequestEntry;
+                   console.log(`[DebuggerApiWrapper] Found matching pending request ${reqIdToAssociate} for session ${session.id}. Associating sessionId.`);
+                   requestToAssociate.sessionId = session.id; // 关联 sessionId
+               } else {
+                   console.warn(`[DebuggerApiWrapper] No matching pending request found for started session ${session.id} with config name "${session.configuration.name}". This session might not be tracked.`);
+               }
+            }));
+
+            listeners.push(vscode.debug.onDidTerminateDebugSession(session => {
+              // ... onDidTerminateDebugSession 逻辑不变 ...
+              console.log(`[DebuggerApiWrapper] onDidTerminateDebugSession: Received session.id=${session.id}`);
+              const terminatedRequestEntry = Array.from(this.pendingStartRequests.entries())
+                                                .find(([reqId, req]) => req.sessionId === session.id);
+              if (terminatedRequestEntry) {
+                const [terminatedRequestId, terminatedRequest] = terminatedRequestEntry;
+                console.log(`[DebuggerApiWrapper] Found matching request ${terminatedRequestId} for terminated session ${session.id}.`);
+                if (terminatedRequest.isResolved) {
+                    // console.warn(`[DebuggerApiWrapper] Request ${terminatedRequestId} already resolved, ignoring 'onDidTerminateDebugSession' event.`);
+                    return;
+                }
+                if (this.pendingStartRequests.has(terminatedRequestId)) {
+                   console.log(`[DebuggerApiWrapper] Resolving request ${terminatedRequestId} as completed.`);
+                   terminatedRequest.resolve({ status: 'completed', message: '调试会话已结束。' });
+                } else {
+                    console.warn(`[DebuggerApiWrapper] Request ${terminatedRequestId} not found in pending requests during onDidTerminateDebugSession.`);
+                }
+              } else {
+                  // console.warn(`[DebuggerApiWrapper] No pending request found for terminated session ${session.id}.`);
+              }
+            }));
+            pendingRequest.listeners = listeners; // 保存监听器 disposable
+
+            // --- 启动调试 (不变) ---
+            try {
+              // ... startDebugging 调用逻辑不变 ...
+              console.log(`[DebuggerApiWrapper] Calling vscode.debug.startDebugging for ${configurationName}`);
+              const success = await vscode.debug.startDebugging(folder, targetConfig);
+              if (!success) {
+                console.error(`[DebuggerApiWrapper] vscode.debug.startDebugging returned false for ${configurationName}. Request ID: ${requestId}`);
+                resolveCleanup({ status: 'error', message: 'VS Code 报告无法启动调试会话（startDebugging 返回 false）。' });
+              } else {
+                console.log(`[DebuggerApiWrapper] vscode.debug.startDebugging call succeeded for ${configurationName}. Request ID: ${requestId}. Waiting for events...`);
+              }
+            } catch (error: any) {
+              // ... 错误处理不变 ...
+              console.error(`[DebuggerApiWrapper] Error calling vscode.debug.startDebugging for ${configurationName}. Request ID: ${requestId}:`, error);
+              resolveCleanup({ status: 'error', message: `启动调试时出错: ${error.message}` });
+            }
+        });
+    }
+
+    // --- 辅助函数：构建 StopEventData ---
+    private async buildStopEventData(session: vscode.DebugSession, stopBody: any): Promise<StopEventData> {
+        const timestamp = new Date().toISOString();
+        const threadId = stopBody.threadId;
+
+        // 1. 获取调用栈
+        let callStack: StopEventData['call_stack'] = [];
+        try {
+            const stackTraceResponse = await session.customRequest('stackTrace', { threadId: threadId, levels: 20 });
+            if (stackTraceResponse && stackTraceResponse.stackFrames) {
+                callStack = stackTraceResponse.stackFrames.map((frame: any) => ({
+                    frame_id: frame.id,
+                    function_name: frame.name || '<unknown>',
+                    file_path: frame.source?.path || frame.source?.name || 'unknown',
+                    line_number: frame.line,
+                    column_number: frame.column,
+                }));
+            }
+        } catch (e) { console.error("[DebuggerApiWrapper] Error fetching stack trace:", e); }
+
+        // 2. 获取顶层帧变量
+        let topFrameVariables: StopEventData['top_frame_variables'] = null;
+        if (callStack.length > 0) {
+            const topFrameId = callStack[0].frame_id;
+            try {
+                const scopesResponse = await session.customRequest('scopes', { frameId: topFrameId });
+                // 优先查找 'Locals'，其次是第一个非 expensive 的作用域
+                const localsScope = scopesResponse?.scopes?.find((s: any) => s.name.toLowerCase() === 'locals')
+                                 || scopesResponse?.scopes?.find((s: any) => !s.expensive);
+
+                if (localsScope && localsScope.variablesReference > 0) {
+                    const variablesResponse = await session.customRequest('variables', { variablesReference: localsScope.variablesReference });
+                    if (variablesResponse && variablesResponse.variables) {
+                        topFrameVariables = {
+                            scope_name: localsScope.name,
+                            variables: variablesResponse.variables.map((v: any): VariableInfo => ({
+                                name: v.name,
+                                value: v.value,
+                                type: v.type || null,
+                                variables_reference: v.variablesReference || 0,
+                                evaluate_name: v.evaluateName,
+                                memory_reference: v.memoryReference,
+                            }))
+                        };
+                    }
+                }
+            } catch (e) { console.error("[DebuggerApiWrapper] Error fetching top frame variables:", e); }
+        }
+
+        // 3. 构建 StopEventData 对象
+        const sourceInfo = callStack[0] ? {
+            path: callStack[0].file_path,
+            name: path.basename(callStack[0].file_path) || callStack[0].file_path // 使用 path.basename 获取文件名
+        } : null;
+
+        return {
+            timestamp,
+            reason: stopBody.reason || 'unknown',
+            thread_id: threadId,
+            description: stopBody.description || null,
+            text: stopBody.text || null,
+            all_threads_stopped: stopBody.allThreadsStopped ?? null,
+            source: sourceInfo,
+            line: callStack[0]?.line_number ?? null,
+            column: callStack[0]?.column_number ?? null,
+            call_stack: callStack,
+            top_frame_variables: topFrameVariables,
+            hit_breakpoint_ids: stopBody.hitBreakpointIds || null,
+        };
+    }
 }
+
+
+

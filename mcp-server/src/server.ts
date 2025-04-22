@@ -36,28 +36,6 @@ const server = new McpServer({
   version: '1.1.0' // Use version as per README example - TODO: Consider moving to constants or package.json
 });
 
-// 定义 helloWorld 工具处理函数 (返回值结构根据 README 调整)
-// 修改签名以匹配 server.tool 的期望: (args: SchemaType, extra: RequestHandlerExtra)
-async function helloWorldHandler(
-    args: {}, // Corresponds to the empty schema {} provided in server.tool
-    extra: any // Use 'any' for RequestHandlerExtra if type import is problematic or details aren't needed
-): Promise<{ content: { type: "text", text: string }[] }> { // Explicitly type the content element
-  logger.info('Executing helloWorld tool', { args, extra }); // Log received args and extra
-  // args are unused in this simple tool
-  return {
-    content: [{ type: "text", text: "HelloWorld" }] // Return structure expected by SDK tool handler
-  };
-}
-
-// 注册 helloWorld 工具 (使用 server.tool 方法)
-server.tool(
-  'helloWorld',
-  {}, // Pass an empty object {} as the raw shape for the input schema (no input needed)
-  helloWorldHandler // Pass the correctly signed handler function
-  // description is not directly accepted by McpServer.tool
-);
-logger.info('[MCP Server] Registered tool: helloWorld'); // 添加日志
-
 // 注册获取调试配置的工具
 server.tool(
     Constants.TOOL_GET_DEBUGGER_CONFIGURATIONS, // 使用常量
@@ -89,6 +67,14 @@ server.tool(
     DebugTools.handleRemoveBreakpoint // 指定处理函数
 );
 logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_REMOVE_BREAKPOINT}`); // 添加日志
+
+// 注册启动调试的工具
+server.tool(
+    Constants.TOOL_START_DEBUGGING, // 使用常量
+    DebugTools.startDebuggingSchema.shape, // 传入 Zod Schema 的 shape
+    DebugTools.handleStartDebugging // 指定处理函数
+);
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_START_DEBUGGING}`); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {
@@ -268,9 +254,9 @@ process.on('message', (message: any) => {
     if (
         message &&
         typeof message === 'object' &&
-        message.type === 'response' && // 直接使用字符串，因为它在 src/constants.ts 中定义
+        message.type === Constants.IPC_MESSAGE_TYPE_RESPONSE && // 使用常量
         typeof message.requestId === 'string' && // 检查 requestId 字段
-        (message.status === Constants.STATUS_SUCCESS || message.status === Constants.STATUS_ERROR) // 使用正确的常量名
+        (message.status === Constants.IPC_STATUS_SUCCESS || message.status === Constants.IPC_STATUS_ERROR) // 使用正确的常量名
         // payload 和 error 是可选的，不强制检查
     ) {
         // 确认消息结构符合 PluginResponse，然后处理

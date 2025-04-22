@@ -1,7 +1,13 @@
 import * as vscode from 'vscode';
 import { ProcessManager } from './processManager'; // 引入 ProcessManager
 import { DebuggerApiWrapper } from '../vscode/debuggerApiWrapper'; // 引入 DebuggerApiWrapper
-import { PluginRequest, PluginResponse, RemoveBreakpointParams } from '../types'; // 从共享文件导入, 增加 RemoveBreakpointParams
+import {
+    PluginRequest,
+    PluginResponse,
+    RemoveBreakpointParams,
+    StartDebuggingRequestPayload,
+    StartDebuggingResponsePayload
+} from '../types'; // 从共享文件导入
 import * as Constants from '../constants'; // 导入常量
 
 /**
@@ -41,7 +47,6 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
         if (message?.type !== Constants.IPC_MESSAGE_TYPE_REQUEST || !message.command || !message.requestId) {
             console.warn('[Plugin IPC Handler] Received invalid or non-request message:', message);
             this.outputChannel.appendLine(`[IPC Handler Warning] Received invalid message: ${JSON.stringify(message)}`);
-            // 对于无效请求，可以选择不响应或发送错误
             if (message?.type === Constants.IPC_MESSAGE_TYPE_REQUEST && message.requestId) {
                  this.sendResponseToServer(message.requestId, Constants.IPC_STATUS_ERROR, undefined, { message: 'Invalid message format.' });
             }
@@ -50,7 +55,6 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
 
         const { requestId, command, payload } = message;
 
-        // 检查 DebuggerApiWrapper 是否已设置
         if (!this.debuggerApiWrapper) {
             console.error('[Plugin IPC Handler] DebuggerApiWrapper not set. Cannot handle debug commands.');
             this.outputChannel.appendLine('[IPC Handler Error] DebuggerApiWrapper not set.');
@@ -63,26 +67,28 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
             switch (command) {
                 case Constants.IPC_COMMAND_SET_BREAKPOINT:
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_SET_BREAKPOINT}' request (ID: ${requestId})`);
-                    // 委托给 DebuggerApiWrapper
                     responsePayload = await this.debuggerApiWrapper.addBreakpoint(payload);
-                    this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, responsePayload);
+                    // addBreakpoint 返回 { breakpoint } 或 { error }
+                    if ('breakpoint' in responsePayload) {
+                        this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, responsePayload);
+                    } else {
+                        this.sendResponseToServer(requestId, Constants.IPC_STATUS_ERROR, undefined, responsePayload.error);
+                    }
                     break;
 
                 case Constants.IPC_COMMAND_GET_BREAKPOINTS:
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_GET_BREAKPOINTS}' request (ID: ${requestId})`);
-                    // 委托给 DebuggerApiWrapper
                     const breakpoints = this.debuggerApiWrapper.getBreakpoints();
                     responsePayload = {
-                        timestamp: new Date().toISOString(), // 添加时间戳
+                        timestamp: new Date().toISOString(),
                         breakpoints: breakpoints,
                     };
                     this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, responsePayload);
                     break;
 
-                case Constants.IPC_COMMAND_REMOVE_BREAKPOINT: // 新增处理 removeBreakpoint
+                case Constants.IPC_COMMAND_REMOVE_BREAKPOINT:
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_REMOVE_BREAKPOINT}' request (ID: ${requestId})`);
-                    // 委托给 DebuggerApiWrapper
-                    const removeResult = await this.debuggerApiWrapper.removeBreakpoint(payload as RemoveBreakpointParams); // 类型断言
+                    const removeResult = await this.debuggerApiWrapper.removeBreakpoint(payload as RemoveBreakpointParams);
                     if (removeResult.status === Constants.IPC_STATUS_SUCCESS) {
                         this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, { message: removeResult.message });
                     } else {
@@ -90,11 +96,19 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                     }
                     break;
 
+                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST: // 新增处理 startDebugging
+                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_START_DEBUGGING_REQUEST}' request (ID: ${requestId})`);
+                    const startResult = await this.debuggerApiWrapper.startDebuggingAndWait(
+                        (payload as StartDebuggingRequestPayload).configurationName,
+                        (payload as StartDebuggingRequestPayload).noDebug
+                    );
+                    // startDebuggingAndWait 返回的是 StartDebuggingResponsePayload
+                    // sendResponseToServer 会处理这种特殊 payload
+                    this.sendResponseToServer(requestId, startResult.status, startResult); // 传递内部 status 和完整 payload
+                    break;
+
                 // 在这里添加对其他调试命令的处理...
-                // case 'getConfigurations':
-                //     // const configs = await this.debuggerApiWrapper.getConfigurations(); // 假设有此方法
-                //     // responsePayload = { configurations: configs };
-                //     // this.sendResponseToServer(requestId, Constants.IPC_STATUS_SUCCESS, responsePayload);
+                // case Constants.IPC_COMMAND_GET_CONFIGURATIONS:
                 //     this.outputChannel.appendLine(`[IPC Handler] Command '${command}' not yet implemented.`);
                 //     this.sendResponseToServer(requestId, Constants.IPC_STATUS_ERROR, undefined, { message: `Command '${command}' not implemented.` });
                 //     break;
@@ -116,29 +130,64 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
     /**
      * 发送响应给服务器子进程，通过 ProcessManager。
      * @param requestId 请求 ID。
-     * @param status 响应状态。
-     * @param payload 响应负载。
+     * @param status 响应状态 (可以是 IPC 标准状态或 StartDebugging 的内部状态)。
+     * @param payload 响应负载 (可以是通用负载或 StartDebuggingResponsePayload)。
      * @param error 错误信息。
      */
-    private sendResponseToServer(requestId: string, status: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR, payload?: any, error?: { message: string }): void {
+    private sendResponseToServer(requestId: string, status: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR | StartDebuggingResponsePayload['status'], payload?: any, error?: { message: string }): void {
+        let finalPayload = payload;
+        let finalStatus: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR = Constants.IPC_STATUS_ERROR; // Default to error
+        let finalError = error;
+
+        // 检查 payload 是否是 StartDebuggingResponsePayload 类型
+        if (payload && typeof payload === 'object' && 'status' in payload && ['stopped', 'completed', 'error', 'timeout', 'interrupted'].includes(payload.status)) {
+            const startDebugPayload = payload as StartDebuggingResponsePayload;
+            // 映射到顶层 IPC 状态
+            if (startDebugPayload.status === 'stopped' || startDebugPayload.status === 'completed') {
+                finalStatus = Constants.IPC_STATUS_SUCCESS;
+                finalPayload = startDebugPayload; // 成功时，payload 就是完整的 StartDebuggingResponsePayload
+                finalError = undefined; // 清除可能存在的外部错误
+            } else {
+                // 对于 error, timeout, interrupted 状态
+                finalStatus = Constants.IPC_STATUS_ERROR;
+                finalError = { message: startDebugPayload.message }; // 将内部消息放入顶层 error
+                finalPayload = undefined; // 清除 payload
+            }
+        } else {
+             // 如果不是 StartDebuggingResponsePayload，则使用传入的 status 和 error
+             if (status === Constants.IPC_STATUS_SUCCESS || status === Constants.IPC_STATUS_ERROR) {
+                 finalStatus = status;
+             } else {
+                 // 如果传入的 status 也不是标准 IPC 状态 (例如 startDebugging 的内部状态)，则默认为 error
+                 finalStatus = Constants.IPC_STATUS_ERROR;
+                 // 如果没有明确的 error 对象，尝试从 payload 或 status 创建一个
+                 if (!finalError) {
+                     const message = typeof payload?.message === 'string' ? payload.message : `Operation failed with status: ${status}`;
+                     finalError = { message };
+                 }
+                 finalPayload = undefined; // 清除非标准成功状态的 payload
+             }
+             // finalPayload 和 finalError 保持传入的值 (除非上面已修改)
+        }
+
         const responseMessage: PluginResponse = {
             type: Constants.IPC_MESSAGE_TYPE_RESPONSE,
             requestId: requestId,
-            status: status,
-            payload: payload,
-            error: error
+            status: finalStatus, // 使用最终确定的 IPC 状态
+            payload: finalPayload,
+            error: finalError
         };
 
-        this.outputChannel.appendLine(`[IPC Handler] Preparing to send response via ProcessManager for request ${requestId}: ${status}`);
+        this.outputChannel.appendLine(`[IPC Handler] Preparing to send response via ProcessManager for request ${requestId}: ${finalStatus}`);
         try {
             const success = this.processManager.send(responseMessage); // 使用 ProcessManager 发送
-            this.outputChannel.appendLine(`[IPC Handler] processManager.send returned: ${success} for request ${requestId}`); // Log return value explicitly
+            this.outputChannel.appendLine(`[IPC Handler] processManager.send returned: ${success} for request ${requestId}`);
 
             if (!success) {
                 console.error(`[Plugin IPC Handler] Failed to send IPC response via ProcessManager for request ${requestId} (returned false).`);
                 this.outputChannel.appendLine(`[IPC Handler Error] Failed to send response via ProcessManager for request ${requestId}. Process might be unavailable or channel blocked.`);
             } else {
-                 this.outputChannel.appendLine(`[IPC Handler] Successfully queued response via ProcessManager for request ${requestId}: ${status}`); // Changed log message slightly
+                 this.outputChannel.appendLine(`[IPC Handler] Successfully queued response via ProcessManager for request ${requestId}: ${finalStatus}`);
             }
         } catch (e: any) {
             console.error(`[Plugin IPC Handler] Exception during processManager.send for request ${requestId}:`, e);
@@ -148,6 +197,7 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
 
 
     /**
+     * 实现 vscode.Disposable 接口。
      */
     dispose(): void {
         this.outputChannel.appendLine('[IPC Handler] Disposing...');
