@@ -471,4 +471,4 @@ vscode 插件部分不需要 webview
 - 开发删除断点工具
 - 开发启动调试工具
 ### 当前任务
-- 
+- 重构优化src/vscode/debuggerApiWrapper.ts,将大文件拆分成小文件,优化项目结构

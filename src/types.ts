@@ -72,6 +72,15 @@ export interface VariableInfo {
   memory_reference?: string;
 }
 
+// 调用栈帧信息结构 (从 StopEventData 提取)
+export interface StackFrameInfo {
+  frame_id: number;
+  function_name: string;
+  file_path: string;
+  line_number: number;
+  column_number: number;
+}
+
 // 调试停止事件数据结构 (根据 ProjectBrief.md)
 export interface StopEventData {
   timestamp: string; // ISO 8601 UTC
@@ -83,13 +92,7 @@ export interface StopEventData {
   source?: { path: string; name: string } | null;
   line?: number | null;
   column?: number | null;
-  call_stack: {
-    frame_id: number;
-    function_name: string;
-    file_path: string;
-    line_number: number;
-    column_number: number;
-  }[];
+  call_stack: StackFrameInfo[]; // 使用定义的接口
   top_frame_variables?: { // 顶层帧变量快照
     scope_name: string;
     variables: VariableInfo[];

@@ -40,13 +40,16 @@
     │   ├── IpcHandler.ts
     │   └── ProcessManager.ts
     └── vscode/
-        └── DebuggerApiWrapper.ts
+        ├── breakpointManager.ts
+        ├── debugSessionManager.ts
+        ├── debugStateProvider.ts
+        └── debuggerApiWrapper.ts
 ```
 
 ## 2. 关键子目录用途
 
 -   `src/managers/`: 存放插件端的管理器类，负责处理特定的功能领域，如进程管理、IPC 通信等。这些类通常由 `McpServerManager` 协调。
--   `src/vscode/`: 存放与 VS Code API 直接交互的封装，提供对 VS Code 功能的抽象层，例如调试 API 的封装。
+-   `src/vscode/`: 存放与 VS Code Debug API 直接交互的封装和管理器类。`DebuggerApiWrapper` 作为 Facade 协调 `BreakpointManager`, `DebugSessionManager`, `DebugStateProvider` 等管理器。
 -   `mcp-server/src/toolProviders/debug/`: 存放 MCP 服务器的调试工具实现。每个文件通常对应一个具体的调试工具，如获取配置、设置/获取断点等。`index.ts` 文件负责导出这些工具。
 
 ## 3. 核心模块/类职责
@@ -87,9 +90,14 @@
     -   读取和写入持久化的用户配置。
     -   提供获取和更新配置的方法。
 -   `src/vscode/DebuggerApiWrapper.ts`:
-    -   封装了 VS Code Debug API 的调用。
-    -   提供设置断点 (`setBreakpoint`)、获取所有断点 (`getBreakpoints`) 等功能的抽象接口。
-    -   处理与 VS Code 调试会话的交互细节，例如断点的验证和管理。
+    -   作为 Facade，协调调用 `BreakpointManager`, `DebugSessionManager`, `DebugStateProvider` 等管理器。
+    -   对外提供统一的接口，封装了 VS Code Debug API 的复杂性。
+-   `src/vscode/breakpointManager.ts`:
+    -   负责管理 VS Code 中的断点（添加、获取、移除）。
+-   `src/vscode/debugSessionManager.ts`:
+    -   负责管理 VS Code 调试会话的生命周期（启动、停止、等待事件）。
+-   `src/vscode/debugStateProvider.ts`:
+    -   负责在调试停止时，获取当前的调试状态信息，如调用栈和变量。
 -   `src/constants.ts`:
     -   存放插件端使用的常量，例如命令 ID、状态栏文本等。
 -   `src/types.ts`:

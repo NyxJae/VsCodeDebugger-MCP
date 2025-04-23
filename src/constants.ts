@@ -35,6 +35,10 @@ export const IPC_MESSAGE_TYPE_REQUEST = 'request';
 export const IPC_MESSAGE_TYPE_RESPONSE = 'response';
 export const IPC_STATUS_SUCCESS = 'success';
 export const IPC_STATUS_ERROR = 'error';
+export const IPC_STATUS_STOPPED = 'stopped'; // Added
+export const IPC_STATUS_COMPLETED = 'completed'; // Added
+export const IPC_STATUS_TIMEOUT = 'timeout'; // Added
+export const IPC_STATUS_INTERRUPTED = 'interrupted'; // Added
 
 // UI Texts
 export const UI_TEXT_INPUT_NEW_PORT = '输入新端口';
