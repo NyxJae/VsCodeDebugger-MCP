@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events'; // 使用 Node.js 的 EventEmitter
+import * as Constants from '../constants'; // 导入常量
 
 export type ProcessStatus = 'stopped' | 'starting' | 'running' | 'error';
 
@@ -89,8 +90,8 @@ export class ProcessManager extends EventEmitter implements vscode.Disposable {
                 const output = data.toString();
                 this.outputChannel.appendLine(`[stdout] ${output.trim()}`);
                 this.emit('stdout', output); // 暴露 stdout 数据
-                // 检查服务器是否成功启动的特定输出
-                if (output.includes(`MCP Server listening on port ${port}`)) {
+                // 检查服务器是否成功启动的特定输出,使用常量进行检查
+                if (output.includes(`${Constants.MCP_SERVER_LISTENING_MESSAGE_PREFIX}${port}`)) {
                     this.setStatus('running');
                     this.outputChannel.appendLine(`Process successfully started, listening on port ${port}.`);
                 }

@@ -42,3 +42,5 @@ export const UI_TEXT_INPUT_NEW_PORT = '输入新端口';
 // MCP Client Configuration
 export const MCP_CONFIG_SERVER_KEY = 'vscode-debugger-mcp';
 export const MCP_CONFIG_URL_TEMPLATE = 'http://localhost:{port}/mcp';
+// Server Startup Message (used for IPC coordination)
+export const MCP_SERVER_LISTENING_MESSAGE_PREFIX = 'MCP Server listening on port ';

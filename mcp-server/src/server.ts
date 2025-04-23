@@ -178,8 +178,8 @@ async function main() {
         }
         const listenUrl = `http://localhost:${actualPort}`;
 
-        // **重要:** 标准输出，用于插件捕获实际监听地址,其输出内容不要修改
-        console.log(`MCP Server listening on port ${actualPort}`);
+        // **重要:** 务必使用标准输出，用于插件端捕获以显示服务器状态,其输出内容不要修改
+        console.log(`${Constants.MCP_SERVER_LISTENING_MESSAGE_PREFIX}${actualPort}`);
 
         // 标准错误输出，用于日志记录
         logger.info(`MCP server HTTP/SSE interface available at ${listenUrl}`);

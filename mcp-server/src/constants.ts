@@ -24,3 +24,5 @@ export const TOOL_SET_BREAKPOINT = 'set_breakpoint';
 export const TOOL_GET_BREAKPOINTS = 'get_breakpoints';
 export const TOOL_REMOVE_BREAKPOINT = 'remove_breakpoint';
 export const TOOL_START_DEBUGGING = 'start_debugging';
+// Server Startup Message (used for IPC coordination)
+export const MCP_SERVER_LISTENING_MESSAGE_PREFIX = 'MCP Server listening on port ';
