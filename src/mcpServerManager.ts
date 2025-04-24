@@ -5,7 +5,7 @@ import { isPortInUse, isValidPort } from './utils/portUtils';
 import { ProcessManager, ProcessStatus } from './managers/processManager';
 import { IpcHandler } from './managers/ipcHandler';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
-import { PluginRequest, PluginResponse, ContinueDebuggingParams } from './types'; // 从共享文件导入, 导入新类型
+import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult } from './types'; // 从共享文件导入, 导入新类型
 import * as Constants from './constants'; // 修正导入路径
 
 /**
@@ -164,6 +164,15 @@ export class McpServerManager implements vscode.Disposable {
                     // 调用 DebuggerApiWrapper 或直接调用 DebugSessionManager
                     responsePayload = await this.debuggerApiWrapper.continueDebuggingAndWait(continueParams.sessionId, continueParams.threadId);
                     this.outputChannel.appendLine(`[Coordinator] 'continue_debugging' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
+                    break;
+                case Constants.IPC_COMMAND_STEP_EXECUTION: // 新增 case
+                    this.outputChannel.appendLine(`[Coordinator] Handling '${Constants.IPC_COMMAND_STEP_EXECUTION}' request: ${requestId}`);
+                    const stepParams = payload as StepExecutionParams; // 类型断言
+                    // 调用 DebuggerApiWrapper 处理单步执行
+                    responsePayload = await this.debuggerApiWrapper.stepExecutionAndWait(stepParams.thread_id, stepParams.step_type);
+                    this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STEP_EXECUTION}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
+                    // 注意: responsePayload 已经是 StepExecutionResult 类型，包含 status 和可能的 stop_event_data 或 message
+                    // 后续的 try...catch 和返回逻辑会根据 responsePayload.status (如果存在) 或捕获的错误来设置最终的 PluginResponse 状态和错误信息
                     break;
                 default:
                     throw new Error(`不支持的命令: ${command}`);

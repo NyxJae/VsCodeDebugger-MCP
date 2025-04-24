@@ -68,6 +68,21 @@ export interface ContinueDebuggingParams {
     threadId: number;
 }
 
+// step_execution 请求参数 (从 MCP Server 发来)
+/**
+ * step_execution 工具的输入参数类型
+ */
+export interface StepExecutionParams {
+  /**
+   * 需要执行单步操作的线程的 ID (从 stop_event_data.thread_id 获取)。
+   */
+  thread_id: number;
+  /**
+   * 指定单步执行的具体类型: 'over', 'into', 'out'。
+   */
+  step_type: 'over' | 'into' | 'out';
+}
+
 // 变量信息结构 (用于 StopEventData)
 export interface VariableInfo {
   name: string;
@@ -115,6 +130,17 @@ export type StartDebuggingResponsePayload =
   | { status: "timeout"; message: string }
   | { status: "interrupted"; message: string };
 
+// stepExecution 响应负载 (插件端返回给 MCP 服务器)
+/**
+ * VS Code 插件端执行 stepExecution 操作后返回给 MCP 服务器的结果类型
+ */
+export type StepExecutionResult =
+  | { status: 'stopped'; stop_event_data: StopEventData }
+  | { status: 'completed'; message: string }
+  | { status: 'timeout'; message: string }
+  | { status: 'interrupted'; message: string } // 如果支持中断
+  | { status: 'error'; message: string };
+
 // 将 startDebugging 添加到 PluginRequestData 和 PluginResponseData 联合类型中
 export type PluginRequestData =
   | PluginRequest<undefined> & { command: typeof Constants.IPC_COMMAND_GET_CONFIGURATIONS }
@@ -122,7 +148,8 @@ export type PluginRequestData =
   | PluginRequest<undefined> & { command: typeof Constants.IPC_COMMAND_GET_BREAKPOINTS }
   | PluginRequest<RemoveBreakpointParams> & { command: typeof Constants.IPC_COMMAND_REMOVE_BREAKPOINT }
   | PluginRequest<StartDebuggingRequestPayload> & { command: typeof Constants.IPC_COMMAND_START_DEBUGGING_REQUEST } // 新增
-  | PluginRequest<ContinueDebuggingParams> & { command: typeof Constants.IPC_COMMAND_CONTINUE_DEBUGGING }; // 新增 continue
+  | PluginRequest<ContinueDebuggingParams> & { command: typeof Constants.IPC_COMMAND_CONTINUE_DEBUGGING } // 新增 continue
+  | PluginRequest<StepExecutionParams> & { command: typeof Constants.IPC_COMMAND_STEP_EXECUTION }; // 新增 stepExecution
 
 export type PluginResponseData =
   | PluginResponse<GetConfigurationsResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS }
@@ -130,4 +157,5 @@ export type PluginResponseData =
   | PluginResponse<GetBreakpointsResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS }
   | PluginResponse<RemoveBreakpointResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS }
   | PluginResponse<StartDebuggingResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS } // 新增成功响应 (虽然 startDebugging 自身状态在 payload 里)
+  | PluginResponse<StepExecutionResult> & { status: typeof Constants.IPC_STATUS_SUCCESS } // 新增 stepExecution 成功响应 (状态在 payload 里)
   | PluginResponse<undefined, { message: string }> & { status: typeof Constants.IPC_STATUS_ERROR }; // 通用错误响应

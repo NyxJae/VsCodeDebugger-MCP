@@ -11,6 +11,7 @@ export const IPC_COMMAND_REMOVE_BREAKPOINT = `${IPC_COMMAND_PREFIX}removeBreakpo
 export const IPC_COMMAND_START_DEBUGGING_REQUEST = `${IPC_COMMAND_PREFIX}startDebuggingRequest`;
 export const IPC_COMMAND_START_DEBUGGING_RESPONSE = `${IPC_COMMAND_PREFIX}startDebuggingResponse`;
 export const IPC_COMMAND_CONTINUE_DEBUGGING = `${IPC_COMMAND_PREFIX}continue_debugging`; // <--- 添加 continue 命令常量
+export const IPC_COMMAND_STEP_EXECUTION = `${IPC_COMMAND_PREFIX}stepExecution`; // <--- 添加 stepExecution 命令常量
 
 // IPC Message Types and Statuses
 export const IPC_MESSAGE_TYPE_REQUEST = 'request'; // 虽然 server 主要处理响应，但 communicator 可能需要
@@ -25,5 +26,6 @@ export const TOOL_SET_BREAKPOINT = 'set_breakpoint';
 export const TOOL_GET_BREAKPOINTS = 'get_breakpoints';
 export const TOOL_REMOVE_BREAKPOINT = 'remove_breakpoint';
 export const TOOL_START_DEBUGGING = 'start_debugging';
+export const TOOL_NAME_STEP_EXECUTION = 'step_execution'; // 新增 step_execution 工具常量
 // Server Startup Message (used for IPC coordination)
 export const MCP_SERVER_LISTENING_MESSAGE_PREFIX = 'MCP Server listening on port ';

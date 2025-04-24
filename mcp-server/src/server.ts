@@ -8,10 +8,12 @@ import http from 'http'; // 导入 http 模块以获取 Server 类型
 // 导入新的工具处理函数
 // 导入新的 Debug 工具模块
 import * as DebugTools from './toolProviders/debug';
-import { continueDebuggingTool } from './toolProviders/debug/continueDebugging'; // 导入新工具
+import { continueDebuggingTool } from './toolProviders/debug/continueDebugging'; // 导入 continue 工具
+import { stepExecutionTool } from './toolProviders/debug/stepExecution'; // 使用命名导入
 // 导入 pluginCommunicator 相关函数和接口
 import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
 import * as Constants from './constants'; // 导入常量
+import { StepExecutionParams } from './types'; // 导入 StepExecutionParams 类型
 
 import { z } from "zod"; // 确保 Zod 已导入
 // import { RequestHandlerExtra } from "@modelcontextprotocol/sdk/server/types.js"; // Attempt to import if needed, otherwise use 'any'
@@ -119,6 +121,48 @@ server.tool(
     }
 );
 logger.info(`[MCP Server] Registered tool: ${continueDebuggingTool.name}`); // 添加日志
+
+// 注册单步执行工具
+server.tool(
+    stepExecutionTool.name,
+    stepExecutionTool.inputSchema.shape, // 使用 Zod Schema 的 shape
+    async (args: StepExecutionParams, extra: any) => { // 添加参数类型
+        logger.info(`[MCP Server] Executing tool: ${stepExecutionTool.name} with args:`, args);
+        try {
+            // 调用原始 execute 函数
+            const result = await stepExecutionTool.execute(args); // 直接传递 args (符合 StepExecutionParams)
+            logger.info(`[MCP Server] Tool ${stepExecutionTool.name} execution result:`, result);
+
+            // 将结果转换为 MCP 响应格式
+            let responseContent = `Status: ${result.status}`;
+            if (result.message) {
+                responseContent += `\nMessage: ${result.message}`;
+            }
+            if (result.status === 'stopped' && result.stop_event_data) {
+                try {
+                    responseContent += `\nStop Event Data: ${JSON.stringify(result.stop_event_data, null, 2)}`;
+                } catch (jsonError) {
+                    logger.warn(`[MCP Server] Failed to stringify stop_event_data for ${stepExecutionTool.name}:`, jsonError);
+                    responseContent += `\nStop Event Data: (Error serializing)`;
+                }
+            }
+
+            return {
+                content: [{ type: 'text', text: responseContent }],
+                // 根据结果状态设置 isError 标志
+                isError: result.status === 'error' || result.status === 'timeout',
+            };
+        } catch (error: any) {
+            logger.error(`[MCP Server] Error executing tool ${stepExecutionTool.name}:`, error);
+            return {
+                content: [{ type: 'text', text: `Error executing tool: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+logger.info(`[MCP Server] Registered tool: ${stepExecutionTool.name}`); // 添加日志
+
 
 // 启动服务器 (使用 server.connect)
 async function main() {

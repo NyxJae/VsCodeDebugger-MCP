@@ -5,7 +5,8 @@ import {
     SetBreakpointParams,
     StartDebuggingResponsePayload,
     StopEventData, // 保留，因为 DebugSessionManager 可能需要
-    VariableInfo // 保留，因为 DebugSessionManager 可能需要
+    VariableInfo, // 保留，因为 DebugSessionManager 可能需要
+    StepExecutionResult // 导入 StepExecutionResult
 } from '../types';
 import { BreakpointManager } from './breakpointManager';
 import { DebugSessionManager } from './debugSessionManager';
@@ -74,6 +75,28 @@ export class DebuggerApiWrapper {
     public async continueDebuggingAndWait(sessionId: string, threadId: number): Promise<StartDebuggingResponsePayload> {
         // 直接传递给 DebugSessionManager
         return this.debugSessionManager.continueDebuggingAndWait({ sessionId, threadId });
+    }
+
+    /**
+     * Sends a step execution request ('over', 'into', 'out') to the specified debug session and waits for the result.
+     * Delegates to the DebugSessionManager.
+     * @param threadId The ID of the thread to perform the step on.
+     * @param stepType The type of step to perform ('over', 'into', 'out').
+     * @returns Promise resolving to the step result (stopped, completed, error, timeout, interrupted).
+     */
+    public async stepExecutionAndWait(threadId: number, stepType: 'over' | 'into' | 'out'): Promise<StepExecutionResult> {
+        const session = vscode.debug.activeDebugSession;
+        if (!session) {
+            // 使用 reject 而不是返回 Promise.reject，因为 Promise 构造函数在 Manager 中
+            // 这里直接抛出或返回一个 rejected 状态的 StepExecutionResult
+             return { status: 'error', message: '当前没有活动的调试会话。' };
+        }
+        // 可以在这里添加检查，确保当前会话状态是 'stopped'
+        // if (this.debugSessionManager.getSessionState(session.id) !== 'stopped') { ... }
+        // 注意：getSessionState 方法当前未在 DebugSessionManager 中实现
+
+        // 调用 DebugSessionManager 的方法
+        return this.debugSessionManager.stepExecutionAndWait(session.id, threadId, stepType);
     }
 
     /**

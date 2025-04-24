@@ -6,7 +6,9 @@ import {
     PluginResponse,
     RemoveBreakpointParams,
     StartDebuggingRequestPayload,
-    StartDebuggingResponsePayload
+    StartDebuggingResponsePayload,
+    StepExecutionParams, // 导入 StepExecutionParams
+    StepExecutionResult // 导入 StepExecutionResult
 } from '../types'; // 从共享文件导入
 import * as Constants from '../constants'; // 导入常量
 
@@ -107,6 +109,26 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                     this.sendResponseToServer(requestId, startResult.status, startResult); // 传递内部 status 和完整 payload
                     break;
 
+                case Constants.IPC_COMMAND_STEP_EXECUTION: // 新增处理 stepExecution
+                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_STEP_EXECUTION}' request (ID: ${requestId})`);
+                    try {
+                        const params = payload as StepExecutionParams; // 类型断言
+                        const stepResult = await this.debuggerApiWrapper.stepExecutionAndWait(params.thread_id, params.step_type);
+                        // stepExecutionAndWait 返回的是 StepExecutionResult
+                        // sendResponseToServer 会处理这种特殊 payload
+                        this.sendResponseToServer(requestId, stepResult.status, stepResult); // 传递内部 status 和完整 payload
+                    } catch (error: any) {
+                        // 捕获 DebuggerApiWrapper 或 DebugSessionManager 中可能抛出的同步错误 (例如 session 不存在)
+                        console.error(`[Plugin IPC Handler] Error directly calling stepExecutionAndWait for request ${requestId}:`, error);
+                        this.outputChannel.appendLine(`[IPC Handler Error] Failed during stepExecutionAndWait call for request ${requestId}: ${error.message}`);
+                        const errorResult: StepExecutionResult = {
+                            status: error.status || 'error', // 保留可能的特定状态
+                            message: error.message || '执行 stepExecution 时发生未知错误。'
+                        };
+                        this.sendResponseToServer(requestId, errorResult.status, errorResult); // 发送错误结果
+                    }
+                    break;
+
                 // 在这里添加对其他调试命令的处理...
                 // case Constants.IPC_COMMAND_GET_CONFIGURATIONS:
                 //     this.outputChannel.appendLine(`[IPC Handler] Command '${command}' not yet implemented.`);
@@ -130,35 +152,43 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
     /**
      * 发送响应给服务器子进程，通过 ProcessManager。
      * @param requestId 请求 ID。
-     * @param status 响应状态 (可以是 IPC 标准状态或 StartDebugging 的内部状态)。
-     * @param payload 响应负载 (可以是通用负载或 StartDebuggingResponsePayload)。
+     * @param status 响应状态 (可以是 IPC 标准状态或 StartDebugging/StepExecution 的内部状态)。
+     * @param payload 响应负载 (可以是通用负载或 StartDebuggingResponsePayload/StepExecutionResult)。
      * @param error 错误信息。
      */
-    private sendResponseToServer(requestId: string, status: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR | StartDebuggingResponsePayload['status'], payload?: any, error?: { message: string }): void {
+    private sendResponseToServer(
+        requestId: string,
+        status: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR | StartDebuggingResponsePayload['status'] | StepExecutionResult['status'],
+        payload?: any,
+        error?: { message: string }
+    ): void {
         let finalPayload = payload;
         let finalStatus: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR = Constants.IPC_STATUS_ERROR; // Default to error
         let finalError = error;
 
-        // 检查 payload 是否是 StartDebuggingResponsePayload 类型
-        if (payload && typeof payload === 'object' && 'status' in payload && ['stopped', 'completed', 'error', 'timeout', 'interrupted'].includes(payload.status)) {
-            const startDebugPayload = payload as StartDebuggingResponsePayload;
+        // 检查 payload 是否是 StartDebuggingResponsePayload 或 StepExecutionResult 类型
+        const isDebugResultPayload = payload && typeof payload === 'object' && 'status' in payload &&
+                                     ['stopped', 'completed', 'error', 'timeout', 'interrupted'].includes(payload.status);
+
+        if (isDebugResultPayload) {
+            const debugResultPayload = payload as StartDebuggingResponsePayload | StepExecutionResult; // 联合类型
             // 映射到顶层 IPC 状态
-            if (startDebugPayload.status === 'stopped' || startDebugPayload.status === 'completed') {
+            if (debugResultPayload.status === 'stopped' || debugResultPayload.status === 'completed') {
                 finalStatus = Constants.IPC_STATUS_SUCCESS;
-                finalPayload = startDebugPayload; // 成功时，payload 就是完整的 StartDebuggingResponsePayload
+                finalPayload = debugResultPayload; // 成功时，payload 就是完整的 Debug 结果
                 finalError = undefined; // 清除可能存在的外部错误
             } else {
                 // 对于 error, timeout, interrupted 状态
                 finalStatus = Constants.IPC_STATUS_ERROR;
-                finalError = { message: startDebugPayload.message }; // 将内部消息放入顶层 error
+                finalError = { message: debugResultPayload.message }; // 将内部消息放入顶层 error
                 finalPayload = undefined; // 清除 payload
             }
         } else {
-             // 如果不是 StartDebuggingResponsePayload，则使用传入的 status 和 error
+             // 如果不是 Debug 结果 Payload，则使用传入的 status 和 error
              if (status === Constants.IPC_STATUS_SUCCESS || status === Constants.IPC_STATUS_ERROR) {
                  finalStatus = status;
              } else {
-                 // 如果传入的 status 也不是标准 IPC 状态 (例如 startDebugging 的内部状态)，则默认为 error
+                 // 如果传入的 status 也不是标准 IPC 状态 (例如 Debug 结果的内部状态)，则默认为 error
                  finalStatus = Constants.IPC_STATUS_ERROR;
                  // 如果没有明确的 error 对象，尝试从 payload 或 status 创建一个
                  if (!finalError) {

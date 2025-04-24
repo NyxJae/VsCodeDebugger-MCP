@@ -122,5 +122,34 @@ export type StartDebuggingResponsePayload =
   | { status: "timeout"; message: string }
   | { status: "interrupted"; message: string };
 
+// --- stepExecution 类型定义 ---
+
+// step_execution 请求参数 (从 MCP Server 发来)
+/**
+ * step_execution 工具的输入参数类型
+ */
+export interface StepExecutionParams {
+  /**
+   * 需要执行单步操作的线程的 ID (从 stop_event_data.thread_id 获取)。
+   */
+  thread_id: number;
+  /**
+   * 指定单步执行的具体类型: 'over', 'into', 'out'。
+   */
+  step_type: 'over' | 'into' | 'out';
+}
+
+// stepExecution 响应负载 (插件端返回给 MCP 服务器)
+/**
+ * VS Code 插件端执行 stepExecution 操作后返回给 MCP 服务器的结果类型
+ */
+export type StepExecutionResult =
+  | { status: 'stopped'; stop_event_data: StopEventData }
+  | { status: 'completed'; message: string }
+  | { status: 'timeout'; message: string }
+  | { status: 'interrupted'; message: string } // 如果支持中断
+  | { status: 'error'; message: string };
+
+
 // 注意：不再需要 PluginRequestData 和 PluginResponseData 联合类型，
 // 因为 mcp-server 只处理响应，不构建完整请求。
