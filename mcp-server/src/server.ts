@@ -10,6 +10,7 @@ import http from 'http'; // 导入 http 模块以获取 Server 类型
 import * as DebugTools from './toolProviders/debug';
 import { continueDebuggingTool } from './toolProviders/debug/continueDebugging'; // 导入 continue 工具
 import { stepExecutionTool } from './toolProviders/debug/stepExecution'; // 使用命名导入
+import { stopDebuggingSchema, handleStopDebugging } from './toolProviders/debug'; // 导入 stopDebugging
 // 导入 pluginCommunicator 相关函数和接口
 import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
 import * as Constants from './constants'; // 导入常量
@@ -162,6 +163,32 @@ server.tool(
     }
 );
 logger.info(`[MCP Server] Registered tool: ${stepExecutionTool.name}`); // 添加日志
+
+// 注册停止调试的工具
+server.tool(
+    Constants.TOOL_STOP_DEBUGGING,
+    stopDebuggingSchema.shape, // 使用导入的 Schema
+    async (args, extra) => { // 适配 MCP SDK 的 handler 签名
+        logger.info(`[MCP Server] Executing tool: ${Constants.TOOL_STOP_DEBUGGING}`);
+        try {
+            // 调用我们实现的 handleStopDebugging
+            const result = await handleStopDebugging(args); // 直接使用导入的 handler
+            logger.info(`[MCP Server] Tool ${Constants.TOOL_STOP_DEBUGGING} execution result:`, result);
+            // 将结果转换为 MCP 响应格式
+            return {
+                content: [{ type: 'text', text: result.message }],
+                isError: result.status === 'error',
+            };
+        } catch (error: any) {
+            logger.error(`[MCP Server] Error executing tool ${Constants.TOOL_STOP_DEBUGGING}:`, error);
+            return {
+                content: [{ type: 'text', text: `执行停止调试工具时出错: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_STOP_DEBUGGING}`);
 
 
 // 启动服务器 (使用 server.connect)

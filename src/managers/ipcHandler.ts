@@ -8,7 +8,8 @@ import {
     StartDebuggingRequestPayload,
     StartDebuggingResponsePayload,
     StepExecutionParams, // 导入 StepExecutionParams
-    StepExecutionResult // 导入 StepExecutionResult
+    StepExecutionResult, // 导入 StepExecutionResult
+    StopDebuggingPayload // 导入 StopDebuggingPayload
 } from '../types'; // 从共享文件导入
 import * as Constants from '../constants'; // 导入常量
 
@@ -66,6 +67,9 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
 
         try {
             let responsePayload: any;
+            // 在这里添加日志
+            console.log(`[Plugin IPC Handler] Received command value: '${command}' for request ID: ${requestId}`);
+            this.outputChannel.appendLine(`[IPC Handler Debug] Received command value: '${command}' for request ID: ${requestId}`);
             switch (command) {
                 case Constants.IPC_COMMAND_SET_BREAKPOINT:
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_SET_BREAKPOINT}' request (ID: ${requestId})`);
@@ -142,6 +146,32 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                             message: error.message || '执行 stepExecution 时发生未知错误。'
                         };
                         this.sendResponseToServer(requestId, errorResult.status, errorResult); // 发送错误结果
+                    }
+                    break;
+
+                case Constants.IPC_COMMAND_STOP_DEBUGGING: // 新增处理 stopDebugging
+                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_STOP_DEBUGGING}' request (ID: ${requestId})`);
+                    try {
+                        // 从 payload 中提取可选的 sessionId
+                        const payloadData = payload as StopDebuggingPayload | undefined;
+                        const sessionId = payloadData?.sessionId;
+                        console.log(`[Plugin IPC Handler] stopDebugging: Received sessionId: ${sessionId}`); // 添加日志
+                        // 调用 DebuggerApiWrapper 中的 stopDebugging 方法
+                        const stopResult = await this.debuggerApiWrapper.stopDebugging(sessionId); // 传递 sessionId
+                        console.log('[Plugin IPC Handler] stopDebugging result:', stopResult);
+                        // stopDebugging 返回 { status: string; message?: string }
+                        // sendResponseToServer 会根据 status 决定最终的 IPC status 和 payload/error
+                        this.sendResponseToServer(
+                            requestId,
+                            stopResult.status as typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR, // 添加类型断言以匹配函数签名
+                            stopResult.message ? { message: stopResult.message } : undefined,
+                            stopResult.status === Constants.IPC_STATUS_ERROR ? { message: stopResult.message || '停止调试时发生未知错误' } : undefined
+                        );
+                    } catch (error: any) {
+                        // 捕获 DebuggerApiWrapper 或 DebugSessionManager 中可能抛出的同步错误
+                        console.error(`[Plugin IPC Handler] Error directly calling stopDebugging for request ${requestId}:`, error);
+                        this.outputChannel.appendLine(`[IPC Handler Error] Failed during stopDebugging call for request ${requestId}: ${error.message}`);
+                        this.sendResponseToServer(requestId, Constants.IPC_STATUS_ERROR, undefined, { message: `处理停止调试命令时发生内部错误: ${error.message}` });
                     }
                     break;
 

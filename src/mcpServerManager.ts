@@ -5,7 +5,7 @@ import { isPortInUse, isValidPort } from './utils/portUtils';
 import { ProcessManager, ProcessStatus } from './managers/processManager';
 import { IpcHandler } from './managers/ipcHandler';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
-import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult } from './types'; // 从共享文件导入, 导入新类型
+import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult, StopDebuggingPayload } from './types'; // 从共享文件导入, 导入新类型
 import * as Constants from './constants'; // 修正导入路径
 
 /**
@@ -194,6 +194,15 @@ export class McpServerManager implements vscode.Disposable {
                     // 调用 DebuggerApiWrapper 处理单步执行，此时 sessionIdToUse 必为 string
                     responsePayload = await this.debuggerApiWrapper.stepExecutionAndWait(sessionIdToUse, stepParams.thread_id, stepParams.step_type);
                     this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STEP_EXECUTION}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
+                    break;
+                }
+                case Constants.IPC_COMMAND_STOP_DEBUGGING: { // 使用块作用域
+                    this.outputChannel.appendLine(`[Coordinator] Handling '${Constants.IPC_COMMAND_STOP_DEBUGGING}' request: ${requestId}`);
+                    const stopPayload = payload as StopDebuggingPayload | undefined; // 使用类型断言
+                    const sessionId = stopPayload?.sessionId; // 提取可选的 sessionId
+                    // 调用 stopDebugging，传递可选的 sessionId
+                    responsePayload = await this.debuggerApiWrapper.stopDebugging(sessionId);
+                    this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STOP_DEBUGGING}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
                     break;
                 }
                 default:

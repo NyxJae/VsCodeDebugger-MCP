@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as Constants from '../constants';
 import {
     ContinueDebuggingParams, // 导入新类型
     RemoveBreakpointParams,
@@ -122,6 +123,24 @@ export class DebuggerApiWrapper {
         } catch (error: any) {
             console.error("[DebuggerApiWrapper] Error retrieving debugger configurations:", error);
             return [];
+        }
+    }
+        /**
+     * Stops the current active debug session or a specific session by ID.
+     * Delegates to the DebugSessionManager.
+     * @param sessionId Optional ID of the session to stop. If omitted, stops the active session.
+     * @returns Promise resolving to an object indicating success or failure.
+     */
+    public async stopDebugging(sessionId?: string): Promise<{ status: string; message?: string }> {
+        try {
+            // DebugSessionManager.stopDebugging 是同步的，但我们封装成异步保持一致性
+            this.debugSessionManager.stopDebugging(sessionId);
+            // stopDebugging API 本身不直接返回成功/失败，我们假设命令已发送
+            // 实际的终止由 onDidTerminateDebugSession 事件处理
+            return { status: Constants.IPC_STATUS_SUCCESS, message: '停止调试命令已发送。' };
+        } catch (error: any) {
+            console.error(`[DebuggerApiWrapper] Error stopping debug session ${sessionId || '(active)'}:`, error);
+            return { status: Constants.IPC_STATUS_ERROR, message: `停止调试会话时出错: ${error.message}` };
         }
     }
 }

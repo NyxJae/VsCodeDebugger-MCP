@@ -84,6 +84,11 @@ export interface StepExecutionParams {
   step_type: 'over' | 'into' | 'out';
 }
 
+// stop_debugging 请求参数 (从 MCP Server 发来)
+export interface StopDebuggingPayload {
+  sessionId?: string;
+}
+
 // 变量信息结构 (用于 StopEventData)
 export interface VariableInfo {
   name: string;
@@ -150,7 +155,8 @@ export type PluginRequestData =
   | PluginRequest<RemoveBreakpointParams> & { command: typeof Constants.IPC_COMMAND_REMOVE_BREAKPOINT }
   | PluginRequest<StartDebuggingRequestPayload> & { command: typeof Constants.IPC_COMMAND_START_DEBUGGING_REQUEST } // 新增
   | PluginRequest<ContinueDebuggingParams> & { command: typeof Constants.IPC_COMMAND_CONTINUE_DEBUGGING } // 新增 continue
-  | PluginRequest<StepExecutionParams> & { command: typeof Constants.IPC_COMMAND_STEP_EXECUTION }; // 新增 stepExecution
+  | PluginRequest<StepExecutionParams> & { command: typeof Constants.IPC_COMMAND_STEP_EXECUTION } // 新增 stepExecution
+  | PluginRequest<StopDebuggingPayload> & { command: typeof Constants.IPC_COMMAND_STOP_DEBUGGING }; // 新增 stopDebugging
 
 export type PluginResponseData =
   | PluginResponse<GetConfigurationsResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS }

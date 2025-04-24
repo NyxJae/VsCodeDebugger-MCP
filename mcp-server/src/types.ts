@@ -151,6 +151,10 @@ export type StepExecutionResult =
   | { status: 'interrupted'; message: string } // 如果支持中断
   | { status: 'error'; message: string };
 
+// stop_debugging 请求参数 (从 MCP Client 发来)
+export interface StopDebuggingPayload {
+  sessionId?: string;
+}
 
 // 注意：不再需要 PluginRequestData 和 PluginResponseData 联合类型，
 // 因为 mcp-server 只处理响应，不构建完整请求。
