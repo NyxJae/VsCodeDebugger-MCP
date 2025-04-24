@@ -49,3 +49,5 @@ export const MCP_CONFIG_SERVER_KEY = 'vscode-debugger-mcp';
 export const MCP_CONFIG_URL_TEMPLATE = 'http://localhost:{port}/mcp';
 // 服务器启动消息
 export const MCP_SERVER_LISTENING_MESSAGE_PREFIX = 'MCP Server listening on port ';
+// 自动启动配置键 (用于 Global State)
+export const AUTO_START_KEY = 'mcpServer.autoStart';

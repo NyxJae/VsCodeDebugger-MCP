@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { StatusBarManager } from './statusBarManager';
 import { McpServerManager } from './mcpServerManager';
-import { getStoredPort, storePort } from './configManager';
+import { getStoredPort, storePort, getAutoStartConfig, storeAutoStartConfig } from './configManager'; // 添加 getAutoStartConfig, storeAutoStartConfig
 import { isValidPort } from './utils/portUtils';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
 import { IpcHandler } from './managers/ipcHandler';
@@ -56,12 +56,27 @@ export function activate(context: vscode.ExtensionContext) {
 	// 将命令和 manager 实例添加到 context.subscriptions 以便自动清理
 	context.subscriptions.push(showServerMenuCommand, copyMcpConfigCommand, statusBarManager, mcpServerManager);
 
+	// --- 添加自动启动逻辑 ---
+	const shouldAutoStart = getAutoStartConfig(context);
+	outputChannel.appendLine(`[Extension] Auto-start config: ${shouldAutoStart}`);
+	if (shouldAutoStart) {
+		outputChannel.appendLine('[Extension] Auto-starting MCP server...');
+		// 异步启动，不需要等待完成
+		mcpServerManager.startServer().catch(error => {
+			// 检查 error 是否有 message 属性
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			outputChannel.appendLine(`[Extension] Error during auto-start: ${errorMessage}`);
+			vscode.window.showErrorMessage(`自动启动 MCP 服务器失败: ${errorMessage}`);
+		});
+	}
+	// --- 自动启动逻辑结束 ---
 }
 
 // showServerActionMenu 函数
 async function showServerActionMenu(context: vscode.ExtensionContext, manager: StatusBarManager, serverManager: McpServerManager): Promise<void> {
 	const status = manager.getStatus();
-	const items: vscode.QuickPickItem[] = [];
+	const items: ActionQuickPickItem[] = []; // 明确类型为 ActionQuickPickItem
+	const isAutoStartEnabled = getAutoStartConfig(context); // 获取当前配置
 
 	// 定义 QuickPickItem 接口，扩展 action 属性
 	interface ActionQuickPickItem extends vscode.QuickPickItem {
@@ -129,6 +144,22 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 	};
 
 	items.push(changePortItem);
+
+	// --- 添加切换自动启动选项 ---
+	const toggleAutoStartItem: ActionQuickPickItem = {
+		label: isAutoStartEnabled ? "$(check) 已开启自动启动" : "$(circle-slash) 已禁用自动启动",
+		description: isAutoStartEnabled ? "点击切换到插件启动时不再自动开启服务器" : "点击切换到插件启动时自动开启服务器",
+		action: async () => {
+			const newState = !isAutoStartEnabled;
+			await storeAutoStartConfig(context, newState);
+			vscode.window.showInformationMessage(`MCP 服务器自动启动已${newState ? '启用' : '禁用'}。`);
+			// 重新显示菜单以更新状态 (可选，但体验更好)
+			// 注意：直接调用 showServerActionMenu 可能导致无限循环，更好的方式是通知状态栏更新或让用户手动重新打开
+			// 暂时不自动重新打开菜单
+		}
+	};
+	items.push(toggleAutoStartItem);
+	// --- 切换自动启动选项结束 ---
 
 	// 添加一个始终显示的状态信息项
 	items.push({
