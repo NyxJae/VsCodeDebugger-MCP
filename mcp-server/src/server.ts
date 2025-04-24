@@ -8,6 +8,7 @@ import http from 'http'; // 导入 http 模块以获取 Server 类型
 // 导入新的工具处理函数
 // 导入新的 Debug 工具模块
 import * as DebugTools from './toolProviders/debug';
+import { continueDebuggingTool } from './toolProviders/debug/continueDebugging'; // 导入新工具
 // 导入 pluginCommunicator 相关函数和接口
 import { handlePluginResponse, PluginResponse } from './pluginCommunicator';
 import * as Constants from './constants'; // 导入常量
@@ -75,6 +76,49 @@ server.tool(
     DebugTools.handleStartDebugging // 指定处理函数
 );
 logger.info(`[MCP Server] Registered tool: ${Constants.TOOL_START_DEBUGGING}`); // 添加日志
+
+// 注册继续调试的工具
+server.tool(
+    continueDebuggingTool.name,
+    continueDebuggingTool.inputSchema.shape,
+    async (args, extra) => { // 使用包装函数适配签名
+        logger.info(`[MCP Server] Executing tool: ${continueDebuggingTool.name} with args:`, args);
+        try {
+            // 调用原始 execute 函数
+            const result = await continueDebuggingTool.execute(args);
+            logger.info(`[MCP Server] Tool ${continueDebuggingTool.name} execution result:`, result);
+
+            // 将结果转换为 MCP 响应格式
+            // 主要信息放在 text content 中
+            let responseContent = `Status: ${result.status}`;
+            if (result.message) {
+                responseContent += `\nMessage: ${result.message}`;
+            }
+            if (result.status === 'stopped' && result.stop_event_data) {
+                // 可以考虑将 stop_event_data 序列化为 JSON 字符串放入 content
+                try {
+                    responseContent += `\nStop Event Data: ${JSON.stringify(result.stop_event_data, null, 2)}`;
+                } catch (jsonError) {
+                    logger.warn(`[MCP Server] Failed to stringify stop_event_data for ${continueDebuggingTool.name}:`, jsonError);
+                    responseContent += `\nStop Event Data: (Error serializing)`;
+                }
+            }
+
+            return {
+                content: [{ type: 'text', text: responseContent }],
+                // 根据结果状态设置 isError 标志
+                isError: result.status === 'error' || result.status === 'timeout',
+            };
+        } catch (error: any) {
+            logger.error(`[MCP Server] Error executing tool ${continueDebuggingTool.name}:`, error);
+            return {
+                content: [{ type: 'text', text: `Error executing tool: ${error.message}` }],
+                isError: true,
+            };
+        }
+    }
+);
+logger.info(`[MCP Server] Registered tool: ${continueDebuggingTool.name}`); // 添加日志
 
 // 启动服务器 (使用 server.connect)
 async function main() {

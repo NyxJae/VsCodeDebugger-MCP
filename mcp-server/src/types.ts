@@ -48,6 +48,12 @@ export interface RemoveBreakpointParams {
   clear_all?: boolean;
 }
 
+// continueDebugging 参数
+export interface ContinueDebuggingParams {
+    session_id: string; // <--- 修改：添加 session_id
+    thread_id: number;
+}
+
 // --- IPC 响应结构 ---
 
 // 通用响应接口

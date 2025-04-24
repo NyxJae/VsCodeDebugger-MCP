@@ -22,13 +22,13 @@ export interface PluginResponse<P = any, E = { message: string }> {
 const pendingRequests = new Map<string, { resolve: (response: PluginResponse<any>) => void, reject: (error: Error) => void, timeout: NodeJS.Timeout }>();
 
 // 向插件发送请求 (更新返回值类型以匹配泛型 PluginResponse)
-// 注意：输入参数的 'type' 字段将被映射到 PluginRequest 的 'command' 字段
-export function sendRequestToPlugin<T = any>(request: { type: string; payload?: any }, timeoutMs: number = 5000): Promise<PluginResponse<T>> {
+// 注意：现在直接接受包含 'command' 字段的对象
+export function sendRequestToPlugin<T = any>(request: { command: string; payload?: any }, timeoutMs: number = 5000): Promise<PluginResponse<T>> {
     return new Promise<PluginResponse<T>>((resolve, reject) => { // 返回泛型 Promise
         const requestId = uuidv4(); // 生成唯一 ID
         const fullRequest: PluginRequest = {
             type: 'request',
-            command: request.type, // 将输入的 type 映射到 command
+            command: request.command, // 直接使用传入的 command
             requestId: requestId,
             payload: request.payload
         };

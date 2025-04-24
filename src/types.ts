@@ -62,6 +62,12 @@ export interface StartDebuggingRequestPayload {
   noDebug: boolean;
 }
 
+// continue_debugging 请求参数 (从 MCP Server 发来)
+export interface ContinueDebuggingParams {
+    sessionId: string; // 由 MCP Server 添加，或由插件端根据状态确定
+    threadId: number;
+}
+
 // 变量信息结构 (用于 StopEventData)
 export interface VariableInfo {
   name: string;
@@ -83,6 +89,7 @@ export interface StackFrameInfo {
 
 // 调试停止事件数据结构 (根据 ProjectBrief.md)
 export interface StopEventData {
+  session_id: string; // 新增：当前调试会话的 ID
   timestamp: string; // ISO 8601 UTC
   reason: string; // "breakpoint", "exception", "step", etc.
   thread_id: number;
@@ -114,7 +121,8 @@ export type PluginRequestData =
   | PluginRequest<SetBreakpointParams> & { command: typeof Constants.IPC_COMMAND_SET_BREAKPOINT }
   | PluginRequest<undefined> & { command: typeof Constants.IPC_COMMAND_GET_BREAKPOINTS }
   | PluginRequest<RemoveBreakpointParams> & { command: typeof Constants.IPC_COMMAND_REMOVE_BREAKPOINT }
-  | PluginRequest<StartDebuggingRequestPayload> & { command: typeof Constants.IPC_COMMAND_START_DEBUGGING_REQUEST }; // 新增
+  | PluginRequest<StartDebuggingRequestPayload> & { command: typeof Constants.IPC_COMMAND_START_DEBUGGING_REQUEST } // 新增
+  | PluginRequest<ContinueDebuggingParams> & { command: typeof Constants.IPC_COMMAND_CONTINUE_DEBUGGING }; // 新增 continue
 
 export type PluginResponseData =
   | PluginResponse<GetConfigurationsResponsePayload> & { status: typeof Constants.IPC_STATUS_SUCCESS }

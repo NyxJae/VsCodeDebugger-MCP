@@ -44,7 +44,7 @@ export async function handleStartDebugging(
     try {
         console.log(`[MCP Server] Sending ${Constants.IPC_COMMAND_START_DEBUGGING_REQUEST} for config: ${args.configuration_name}`); // 使用 mcp-server/src/constants.ts 中的常量
         const pluginResponse: PluginResponse<StartDebuggingResponsePayload> = await sendRequestToPlugin<StartDebuggingResponsePayload>( // 指定泛型类型
-            { type: Constants.IPC_COMMAND_START_DEBUGGING_REQUEST, payload: payloadForPlugin }, // 使用 mcp-server/src/constants.ts 中的常量
+            { command: Constants.IPC_COMMAND_START_DEBUGGING_REQUEST, payload: payloadForPlugin }, // 使用 mcp-server/src/constants.ts 中的常量
             toolTimeout
         );
 

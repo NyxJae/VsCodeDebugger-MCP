@@ -5,7 +5,7 @@ import { isPortInUse, isValidPort } from './utils/portUtils';
 import { ProcessManager, ProcessStatus } from './managers/processManager';
 import { IpcHandler } from './managers/ipcHandler';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
-import { PluginRequest } from './types'; // 从共享文件导入
+import { PluginRequest, PluginResponse, ContinueDebuggingParams } from './types'; // 从共享文件导入, 导入新类型
 import * as Constants from './constants'; // 修正导入路径
 
 /**
@@ -65,7 +65,30 @@ export class McpServerManager implements vscode.Disposable {
             // McpServerManager 在这里不需要直接处理 IPC 消息内容
             this.outputChannel.appendLine(`[Coordinator] Forwarding message from process to IpcHandler: ${JSON.stringify(message)}`);
             // !! 将消息实际传递给 IpcHandler !!
-            this.ipcHandler.handleIncomingMessage(message);
+            // this.ipcHandler.handleIncomingMessage(message); // 旧逻辑，改为直接处理请求
+            if (message && message.type === Constants.IPC_MESSAGE_TYPE_REQUEST) {
+                this.handleRequestFromMCP(message as PluginRequest)
+                    .then(response => {
+                        this.processManager.send(response); // 发送响应回服务器
+                    })
+                    .catch(error => {
+                        // 理论上 handleRequestFromMCP 内部会捕获错误并返回 error response
+                        // 但以防万一，这里也记录一下
+                        this.outputChannel.appendLine(`[Coordinator] Error processing MCP request after promise: ${error}`);
+                        // 可以考虑发送一个通用的错误响应
+                        if (message.requestId) {
+                             this.processManager.send({
+                                type: Constants.IPC_MESSAGE_TYPE_RESPONSE,
+                                requestId: message.requestId,
+                                status: Constants.IPC_STATUS_ERROR,
+                                error: { message: `处理请求时发生意外错误: ${error.message}` }
+                            });
+                        }
+                    });
+            } else {
+                 this.outputChannel.appendLine(`[Coordinator] Received non-request message from process: ${JSON.stringify(message)}`);
+                 // 可以选择忽略或记录其他类型的消息
+            }
         });
 
         this.processManager.on('error', (err: Error) => {
@@ -109,6 +132,64 @@ export class McpServerManager implements vscode.Disposable {
         );
     }
 
+    // --- 新增：处理来自 MCP Server 的请求 ---
+    private async handleRequestFromMCP(request: PluginRequest): Promise<PluginResponse> {
+        const { command, requestId, payload } = request;
+        let responsePayload: any = null;
+        let status: typeof Constants.IPC_STATUS_SUCCESS | typeof Constants.IPC_STATUS_ERROR = Constants.IPC_STATUS_SUCCESS;
+        let errorMessage: string | undefined = undefined;
+
+        this.outputChannel.appendLine(`[Coordinator] Handling MCP request: ${requestId} - Command: ${command}`);
+
+        try {
+            switch (command) {
+                case Constants.IPC_COMMAND_GET_CONFIGURATIONS:
+                    responsePayload = { configurations: this.debuggerApiWrapper.getDebuggerConfigurations() };
+                    break;
+                case Constants.IPC_COMMAND_SET_BREAKPOINT:
+                    responsePayload = await this.debuggerApiWrapper.addBreakpoint(payload);
+                    break;
+                case Constants.IPC_COMMAND_GET_BREAKPOINTS:
+                    responsePayload = { breakpoints: this.debuggerApiWrapper.getBreakpoints(), timestamp: new Date().toISOString() };
+                    break;
+                case Constants.IPC_COMMAND_REMOVE_BREAKPOINT:
+                    responsePayload = await this.debuggerApiWrapper.removeBreakpoint(payload);
+                    break;
+                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST: // 注意常量名称
+                    responsePayload = await this.debuggerApiWrapper.startDebuggingAndWait(payload.configurationName, payload.noDebug ?? false);
+                    break;
+                case Constants.IPC_COMMAND_CONTINUE_DEBUGGING: // 新增 case
+                    this.outputChannel.appendLine(`[Coordinator] Handling 'continue_debugging' request: ${requestId}`);
+                    const continueParams = payload as ContinueDebuggingParams; // 类型断言
+                    // 调用 DebuggerApiWrapper 或直接调用 DebugSessionManager
+                    responsePayload = await this.debuggerApiWrapper.continueDebuggingAndWait(continueParams.sessionId, continueParams.threadId);
+                    this.outputChannel.appendLine(`[Coordinator] 'continue_debugging' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
+                    break;
+                default:
+                    throw new Error(`不支持的命令: ${command}`);
+            }
+        } catch (error: any) {
+            console.error(`[Coordinator] Error handling MCP request ${requestId} (${command}):`, error);
+            this.outputChannel.appendLine(`[Coordinator Error] Handling MCP request ${requestId} (${command}): ${error.message}\n${error.stack}`);
+            status = Constants.IPC_STATUS_ERROR;
+            errorMessage = error.message || '处理请求时发生未知错误';
+            // 对于特定错误类型，可以设置不同的 responsePayload
+             if (responsePayload && typeof responsePayload === 'object' && responsePayload.status === Constants.IPC_STATUS_ERROR) {
+                 // 如果 DebuggerApiWrapper 返回的就是错误状态，直接使用它的 message
+                 errorMessage = responsePayload.message || errorMessage;
+             }
+             responsePayload = undefined; // 错误时 payload 为 undefined
+        }
+
+        return {
+            type: Constants.IPC_MESSAGE_TYPE_RESPONSE,
+            requestId,
+            status,
+            payload: status === Constants.IPC_STATUS_SUCCESS ? responsePayload : undefined,
+            // 确保 errorMessage 始终是 string
+            error: status === Constants.IPC_STATUS_ERROR ? { message: errorMessage || '发生未知错误' } : undefined,
+        };
+    }
     /**
      * 检查 MCP 服务器是否正在运行。
      * @returns 如果服务器正在运行则返回 true，否则返回 false。

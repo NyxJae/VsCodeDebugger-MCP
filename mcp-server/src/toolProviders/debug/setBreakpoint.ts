@@ -68,7 +68,7 @@ export async function handleSetBreakpoint(
     try {
         // 调用 pluginCommunicator 向插件发送设置断点请求
         // 使用常量作为命令字符串
-        const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: Constants.IPC_COMMAND_SET_BREAKPOINT, payload: payloadForPlugin }); // 使用更新后的 payload
+        const pluginResponse: PluginResponse = await sendRequestToPlugin({ command: Constants.IPC_COMMAND_SET_BREAKPOINT, payload: payloadForPlugin }); // 使用更新后的 payload
 
         if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload && pluginResponse.payload.breakpoint) { // 使用本地常量
             // 插件成功设置断点并返回信息

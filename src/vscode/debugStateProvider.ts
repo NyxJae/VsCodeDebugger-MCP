@@ -13,6 +13,7 @@ export class DebugStateProvider {
     public async buildStopEventData(session: vscode.DebugSession, stopBody: any): Promise<StopEventData> {
         const timestamp = new Date().toISOString();
         const threadId = stopBody.threadId;
+        const sessionId = session.id; // 获取 sessionId
 
         // 1. 获取调用栈
         let callStack: StackFrameInfo[] = []; // 恢复类型 StackFrameInfo[]
@@ -65,6 +66,7 @@ export class DebugStateProvider {
         } : null;
 
         return {
+            session_id: sessionId, // <--- 添加 sessionId
             timestamp,
             reason: stopBody.reason || 'unknown',
             thread_id: threadId,

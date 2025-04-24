@@ -73,14 +73,21 @@
     *   `"error"`: 启动失败，包含 `message`。
     *   `"timeout"`: 等待首次停止超时，包含 `message`。
     *   `"interrupted"`: 用户手动中断等待，包含 `message`。
-
 ### 4.6 `continue_debugging` (继续)
 
-*   **目的:** 调试器暂停时，命令其恢复执行。
+*   **目的:** 当调试器当前处于暂停状态时，命令其恢复执行。程序将继续运行，直到遇到下一个断点、发生未捕获的异常、程序自然结束，或者被其他方式再次暂停。
 *   **类型:** 异步工具。
-*   **输入参数:** `thread_id` (必需)。
-*   **返回值 (异步结果):** 同 `start_debugging`。
+*   **输入参数:**
+    *   `session_id` (必需, string): 当前调试会话的唯一 ID。此 ID 必须从之前的 `start_debugging` 工具调用成功后的响应，或任何返回 `status: "stopped"` 的工具响应中的 `stop_event_data.session_id` 获取。
+    *   `thread_id` (必需, number): 需要恢复执行的线程的 ID。这个 ID 通常从上一次 `status: "stopped"` 返回的 `stop_event_data.thread_id` 中获取。对于单线程应用，可能只有一个线程 ID；对于多线程应用，需要指定要操作的线程。
+*   **返回值 (异步结果):**
+    *   `status`: `"stopped"`, `stop_event_data`: (见 **5. Stop Event Data 结构**) - 程序继续执行后，在另一个位置再次暂停。`stop_event_data` 中将包含新的暂停信息，包括 `session_id`。
+    *   `status`: `"completed"`, `message`: `"调试会话正常结束。"` (string) - 程序继续执行后，没有再遇到暂停事件就正常结束了。
+    *   `status`: `"error"`, `message`: 描述继续执行失败原因的字符串 (string)，例如 `"无效的会话 ID 或线程 ID"`, `"无法恢复执行"`。
+    *   `status`: `"timeout"`, `message`: `"等待调试器再次停止或结束超时。"` (string) - 发出了继续命令，但在规定时间内没有收到调试器再次暂停或结束的事件。
+    *   `status`: `"interrupted"`, `message`: `"用户手动中断了继续执行的等待。"` (string) - 在等待期间，用户中断了操作。
 
+---
 ### 4.7 `step_execution` (执行单步)
 
 *   **目的:** 调试器暂停时，执行一次精细控制的单步操作（步过、步入、步出）。

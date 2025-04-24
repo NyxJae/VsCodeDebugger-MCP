@@ -470,5 +470,95 @@ vscode 插件部分不需要 webview
 - 重构优化项目,将大文件拆分成小文件,并整理好文件结构,模块化等,符合最佳实践,上下文收集者在项目中每个文件都读取
 - 开发删除断点工具
 - 开发启动调试工具
-### 当前任务
 - 重构优化src/vscode/debuggerApiWrapper.ts,将大文件拆分成小文件,优化项目结构
+- 开发继续调试工具
+### 当前任务
+- 有问题,我让客户端 开启调试后,命中断点,返回信息都顺利,但客户端继续调试时,是如下问题,给你日志
+Status changed to: starting (Port: 6009)
+Attempting to start process on port 6009...
+Spawning process with PID: 6652
+[stderr] [INFO] [MCP Server] Registered tool: get_debugger_configurations
+[INFO] [MCP Server] Registered tool: set_breakpoint
+[INFO] [MCP Server] Registered tool: get_breakpoints
+[INFO] [MCP Server] Registered tool: remove_breakpoint
+[INFO] [MCP Server] Registered tool: start_debugging
+[INFO] [MCP Server] Registered tool: continue_debugging
+[INFO] Starting MCP server with SDK via HTTP/SSE on port 6009...
+[stdout] MCP Server listening on port 6009
+Status changed to: running (Port: 6009)
+Process successfully started, listening on port 6009.
+[stderr] [INFO] MCP server HTTP/SSE interface available at http://localhost:6009
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: f428c7a8-9e75-4635-8991-d177bdf8320b
+[stderr] [INFO] McpServer connected to SSE transport for sessionId: f428c7a8-9e75-4635-8991-d177bdf8320b
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: ae1bca94-966f-43aa-a1e4-8dc561a2a1c0
+[INFO] McpServer connected to SSE transport for sessionId: ae1bca94-966f-43aa-a1e4-8dc561a2a1c0
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: 2ab73815-3edb-42ba-96ec-35dafca5e132
+[INFO] McpServer connected to SSE transport for sessionId: 2ab73815-3edb-42ba-96ec-35dafca5e132
+[stderr] [INFO] SSE connection closed for sessionId: ae1bca94-966f-43aa-a1e4-8dc561a2a1c0
+[stderr] [INFO] SSE connection request received from ::ffff:127.0.0.1
+[INFO] SSE transport created with sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[INFO] McpServer connected to SSE transport for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stdout] [MCP Server] Handling get_debugger_configurations request...
+[MCP Server] Workspace path received: d:\Personal\Documents\AutoTools
+[MCP Server] Attempting to read launch.json from: d:\Personal\Documents\AutoTools\.vscode\launch.json
+[stdout] [MCP Server] Successfully read launch.json content.
+[stdout] [MCP Server] Successfully parsed launch.json content (after removing comments).
+[MCP Server] Found 1 valid configurations.
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stdout] [MCP Server] Handling start_debugging request...
+[MCP Server] Sending vscode-debugger-mcp:startDebuggingRequest for config: Python 调试程序: 当前文件
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:startDebuggingRequest","requestId":"5f9dad1c-01cf-43c3-a4a1-a7cce807d6d8","payload":{"configurationName":"Python 调试程序: 当前文件","noDebug":false}}
+[IPC Sent] Queued: true - Message: {"type":"response","requestId":"5f9dad1c-01cf-43c3-a4a1-a7cce807d6d8","status":"success","payload":{"status":"stopped","data":{"timestamp":"2025-04-23T10:20:29.161Z","reason":"breakpoint","thread_id":1,"description":null,"text":null,"all_threads_stopped":true,"source":{"path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","name":"svn_diff_report.py"},"line":271,"column":1,"call_stack":[{"frame_id":2,"function_name":"main","file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":271,"column_number":1},{"frame_id":3,"function_name":"<module>","file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":421,"column_number":1}],"top_frame_variables":{"scope_name":"Locals","variables":[{"name":"author","value":"'hujian'","type":"str","variables_reference":0,"evaluate_name":"author"},{"name":"end_revision","value":"'1994'","type":"str","variables_reference":0,"evaluate_name":"end_revision"},{"name":"folder_path","value":"'D:\\\\UnityProject\\\\RXJH\\\\RXJH_301_green\\\\GreenCode'","type":"str","variables_reference":0,"evaluate_name":"folder_path"},{"name":"output_path","value":"'F:\\\\UnityProject\\\\RXJH\\\\RXJH_301_red\\\\svnDiff'","type":"str","variables_reference":0,"evaluate_name":"output_path"},{"name":"revision","value":"'1987'","type":"str","variables_reference":0,"evaluate_name":"revision"}]},"hit_breakpoint_ids":null}}}
+[IPC Send Success Callback] Message sent successfully (async confirmation).
+[stdout] [MCP Server] Received response for start_debugging: {
+  type: 'response',
+  requestId: '5f9dad1c-01cf-43c3-a4a1-a7cce807d6d8',
+  status: 'success',
+  payload: {
+    status: 'stopped',
+    data: {
+      timestamp: '2025-04-23T10:20:29.161Z',
+      reason: 'breakpoint',
+      thread_id: 1,
+      description: null,
+      text: null,
+      all_threads_stopped: true,
+      source: [Object],
+      line: 271,
+      column: 1,
+      call_stack: [Array],
+      top_frame_variables: [Object],
+      hit_breakpoint_ids: null
+    }
+  }
+}
+[stderr] [DEBUG] Received POST to /messages for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[stderr] [DEBUG] Successfully handled POST message for sessionId: 102d44d2-1473-46db-8a64-bb4be4ead9c1
+[INFO] [MCP Server] Executing tool: continue_debugging with args: { session_id: 'undefined', thread_id: 1 }
+[stdout] [MCP Tool] Sending continue_debugging request to plugin for session undefined, thread 1
+[IPC Received] {"type":"request","command":"continue_debugging","requestId":"90587db6-268b-48a5-8654-22a04f50f819","payload":{"sessionId":"undefined","threadId":1}}
+[IPC Sent] Queued: true - Message: {"type":"response","requestId":"90587db6-268b-48a5-8654-22a04f50f819","status":"error","error":{"message":"不支持的命令: continue_debugging"}}
+[IPC Send Success Callback] Message sent successfully (async confirmation).
+[stderr] [MCP Tool] Error executing continue_debugging: Error: 不支持的命令: continue_debugging
+    at handlePluginResponse (e:\Project\VsCodeDebugger-MCP\mcp-server\dist\pluginCommunicator.js:56:28)
+    at process.<anonymous> (e:\Project\VsCodeDebugger-MCP\mcp-server\dist\server.js:308:55)
+    at process.emit (node:events:518:28)
+    at emit (node:internal/child_process:950:14)
+    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
+[INFO] [MCP Server] Tool continue_debugging execution result: { status: 'error', message: '不支持的命令: continue_debugging' }

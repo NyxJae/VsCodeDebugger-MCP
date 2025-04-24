@@ -24,7 +24,7 @@ export async function handleGetBreakpoints(
     try {
         // 调用 pluginCommunicator 向插件发送获取断点请求
         // 使用常量作为命令字符串
-        const pluginResponse: PluginResponse = await sendRequestToPlugin({ type: Constants.IPC_COMMAND_GET_BREAKPOINTS, payload: {} }); // 无需 payload
+        const pluginResponse: PluginResponse = await sendRequestToPlugin({ command: Constants.IPC_COMMAND_GET_BREAKPOINTS, payload: {} }); // 无需 payload
 
         console.log('[MCP Server] Received response from extension for get_breakpoints:', JSON.stringify(pluginResponse, null, 2));
 

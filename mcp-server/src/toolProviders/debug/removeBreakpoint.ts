@@ -71,7 +71,7 @@ export async function handleRemoveBreakpoint(params: unknown): Promise<RemoveBre
     // validatedParams 已经通过了包括 refine 在内的所有校验
     // 使用本地类型 LocalPluginResponse
     const response: LocalPluginResponse = await sendRequestToPlugin({
-      type: Constants.IPC_COMMAND_REMOVE_BREAKPOINT, // 使用本地常量
+      command: Constants.IPC_COMMAND_REMOVE_BREAKPOINT, // 使用本地常量
       payload: validatedParams,
     });
 

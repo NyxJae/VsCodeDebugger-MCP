@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import {
+    ContinueDebuggingParams, // 导入新类型
     RemoveBreakpointParams,
     SetBreakpointParams,
     StartDebuggingResponsePayload,
@@ -61,6 +62,18 @@ export class DebuggerApiWrapper {
      */
     public async startDebuggingAndWait(configurationName: string, noDebug: boolean): Promise<StartDebuggingResponsePayload> {
         return this.debugSessionManager.startDebuggingAndWait(configurationName, noDebug);
+    }
+
+    /**
+     * Sends a 'continue' request to the specified debug session and waits for the result.
+     * Delegates to the DebugSessionManager.
+     * @param sessionId The ID of the target debug session.
+     * @param threadId The ID of the thread to continue.
+     * @returns Promise resolving to the session result (stopped, completed, error, timeout).
+     */
+    public async continueDebuggingAndWait(sessionId: string, threadId: number): Promise<StartDebuggingResponsePayload> {
+        // 直接传递给 DebugSessionManager
+        return this.debugSessionManager.continueDebuggingAndWait({ sessionId, threadId });
     }
 
     /**
