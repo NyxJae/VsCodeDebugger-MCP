@@ -50,7 +50,7 @@ export interface RemoveBreakpointParams {
 
 // continueDebugging 参数
 export interface ContinueDebuggingParams {
-    session_id: string; // <--- 修改：添加 session_id
+    session_id?: string; // 新代码: 设为可选
     thread_id: number;
 }
 
@@ -129,6 +129,7 @@ export type StartDebuggingResponsePayload =
  * step_execution 工具的输入参数类型
  */
 export interface StepExecutionParams {
+    session_id?: string; // 新增: 可选的 session_id
   /**
    * 需要执行单步操作的线程的 ID (从 stop_event_data.thread_id 获取)。
    */

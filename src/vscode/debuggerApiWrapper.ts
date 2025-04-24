@@ -80,23 +80,21 @@ export class DebuggerApiWrapper {
     /**
      * Sends a step execution request ('over', 'into', 'out') to the specified debug session and waits for the result.
      * Delegates to the DebugSessionManager.
+     * @param sessionId The ID of the target debug session.
      * @param threadId The ID of the thread to perform the step on.
      * @param stepType The type of step to perform ('over', 'into', 'out').
      * @returns Promise resolving to the step result (stopped, completed, error, timeout, interrupted).
      */
-    public async stepExecutionAndWait(threadId: number, stepType: 'over' | 'into' | 'out'): Promise<StepExecutionResult> {
-        const session = vscode.debug.activeDebugSession;
-        if (!session) {
-            // 使用 reject 而不是返回 Promise.reject，因为 Promise 构造函数在 Manager 中
-            // 这里直接抛出或返回一个 rejected 状态的 StepExecutionResult
-             return { status: 'error', message: '当前没有活动的调试会话。' };
-        }
-        // 可以在这里添加检查，确保当前会话状态是 'stopped'
-        // if (this.debugSessionManager.getSessionState(session.id) !== 'stopped') { ... }
-        // 注意：getSessionState 方法当前未在 DebugSessionManager 中实现
+    public async stepExecutionAndWait(sessionId: string, threadId: number, stepType: 'over' | 'into' | 'out'): Promise<StepExecutionResult> {
+        // 移除对 activeDebugSession 的硬编码依赖
+        // const session = vscode.debug.activeDebugSession;
+        // if (!session) {
+        //      return { status: 'error', message: '当前没有活动的调试会话。' };
+        // }
+        // 可以在 DebugSessionManager 内部添加检查，确保会话存在且状态是 'stopped'
 
-        // 调用 DebugSessionManager 的方法
-        return this.debugSessionManager.stepExecutionAndWait(session.id, threadId, stepType);
+        // 调用 DebugSessionManager 的方法，传递 sessionId
+        return this.debugSessionManager.stepExecutionAndWait(sessionId, threadId, stepType);
     }
 
     /**

@@ -64,7 +64,7 @@ export interface StartDebuggingRequestPayload {
 
 // continue_debugging 请求参数 (从 MCP Server 发来)
 export interface ContinueDebuggingParams {
-    sessionId: string; // 由 MCP Server 添加，或由插件端根据状态确定
+    sessionId?: string; // 由 MCP Server 添加，或由插件端根据状态确定 (设为可选)
     threadId: number;
 }
 
@@ -73,6 +73,7 @@ export interface ContinueDebuggingParams {
  * step_execution 工具的输入参数类型
  */
 export interface StepExecutionParams {
+    sessionId?: string; // 新增: 可选的 session_id (由 MCP Server 添加或插件端确定)
   /**
    * 需要执行单步操作的线程的 ID (从 stop_event_data.thread_id 获取)。
    */

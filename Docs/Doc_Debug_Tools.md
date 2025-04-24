@@ -78,8 +78,8 @@
 *   **目的:** 当调试器当前处于暂停状态时，命令其恢复执行。程序将继续运行，直到遇到下一个断点、发生未捕获的异常、程序自然结束，或者被其他方式再次暂停。
 *   **类型:** 异步工具。
 *   **输入参数:**
-    *   `session_id` (必需, string): 当前调试会话的唯一 ID。此 ID 必须从之前的 `start_debugging` 工具调用成功后的响应，或任何返回 `status: "stopped"` 的工具响应中的 `stop_event_data.session_id` 获取。
-    *   `thread_id` (必需, number): 需要恢复执行的线程的 ID。这个 ID 通常从上一次 `status: "stopped"` 返回的 `stop_event_data.thread_id` 中获取。对于单线程应用，可能只有一个线程 ID；对于多线程应用，需要指定要操作的线程。
+    *   `session_id` (可选, string): 目标调试会话的唯一 ID。如果省略，工具将自动尝试使用当前活动的调试会话。如果提供了此 ID，则必须是从之前的 `start_debugging` 工具调用成功后的响应，或任何返回 `status: "stopped"` 的工具响应中的 `stop_event_data.session_id` 获取。
+    *   `thread_id` (必需, number): 需要恢复执行的线程的 ID。这个 ID 通常从上一次 `status: "stopped"` 返回的 `stop_event_data.thread_id` 中获取。
 *   **返回值 (异步结果):**
     *   `status`: `"stopped"`, `stop_event_data`: (见 **5. Stop Event Data 结构**) - 程序继续执行后，在另一个位置再次暂停。`stop_event_data` 中将包含新的暂停信息，包括 `session_id`。
     *   `status`: `"completed"`, `message`: `"调试会话正常结束。"` (string) - 程序继续执行后，没有再遇到暂停事件就正常结束了。
@@ -92,9 +92,10 @@
 *   **目的:** 当调试器当前处于暂停状态时，命令其执行一次精细控制的单步操作。根据指定的类型（步过、步入、步出），执行一小段代码后再次暂停。
 *   **类型:** 异步工具。
 *   **输入参数:**
+    *   `session_id` (可选, string): 目标调试会话的唯一 ID。如果省略，工具将自动尝试使用当前活动的调试会话。如果提供了此 ID，则必须是从之前的 `start_debugging` 工具调用成功后的响应，或任何返回 `status: "stopped"` 的工具响应中的 `stop_event_data.session_id` 获取。
     *   `thread_id` (必需, number): 需要执行单步操作的线程的 ID。这个 ID 通常从上一次 `status: "stopped"` 返回的 `stop_event_data.thread_id` 中获取。
     *   `step_type` (必需, string): 指定单步执行的具体类型。必须是以下三个值之一：
-        *   `"over"`: **步过 (Step Over)**。执行当前行代码。如果当前行包含函数调用，则执行整个函数调用，然后暂停在源代码中的下一行（同一函数内或调用者函数中）。
+        *   `"over"`: **步过 (Step Over)**...
         *   `"into"`: **步入 (Step Into)**。如果当前行包含函数调用，则进入该函数内部，并暂停在被调用函数的第一个可执行语句上。如果当前行不包含函数调用，则行为类似于步过。
         *   `"out"`: **步出 (Step Out)**。继续执行当前函数的剩余部分，直到函数返回。然后暂停在调用该函数的语句之后的那一行代码上。
 *   **返回值 (异步结果):**

@@ -113,7 +113,23 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_STEP_EXECUTION}' request (ID: ${requestId})`);
                     try {
                         const params = payload as StepExecutionParams; // 类型断言
-                        const stepResult = await this.debuggerApiWrapper.stepExecutionAndWait(params.thread_id, params.step_type);
+                        const { sessionId, thread_id, step_type } = params; // 解构参数
+
+                        // 检查 sessionId 是否存在，插件端期望收到有效的 sessionId
+                        // 因为 MCP Server 工具端应该已经处理了 sessionId 为空的情况（尝试获取活动会话）
+                        if (!sessionId) {
+                            console.error(`[Plugin IPC Handler] Missing sessionId for stepExecution request ${requestId}. Plugin expects a valid session ID.`);
+                            this.outputChannel.appendLine(`[IPC Handler Error] Missing sessionId for stepExecution request ${requestId}.`);
+                            const errorResult: StepExecutionResult = {
+                                status: 'error',
+                                message: '执行 stepExecution 失败：MCP Server 未能提供有效的 session_id。'
+                            };
+                            this.sendResponseToServer(requestId, errorResult.status, errorResult);
+                            break; // 结束处理此 case
+                        }
+
+                        // 使用解构出的参数调用，确保顺序正确
+                        const stepResult = await this.debuggerApiWrapper.stepExecutionAndWait(sessionId, thread_id, step_type);
                         // stepExecutionAndWait 返回的是 StepExecutionResult
                         // sendResponseToServer 会处理这种特殊 payload
                         this.sendResponseToServer(requestId, stepResult.status, stepResult); // 传递内部 status 和完整 payload
