@@ -5,8 +5,8 @@ import { isPortInUse, isValidPort } from './utils/portUtils';
 import { ProcessManager, ProcessStatus } from './managers/processManager';
 import { IpcHandler } from './managers/ipcHandler';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
-import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult, StopDebuggingPayload } from './types'; // 从共享文件导入, 导入新类型
-import * as Constants from './constants'; // 修正导入路径
+import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult, StopDebuggingPayload } from './types';
+import * as Constants from './constants';
 
 /**
  * 协调 MCP 服务器的启动、停止、状态管理和与 VS Code 的交互。
@@ -41,7 +41,7 @@ export class McpServerManager implements vscode.Disposable {
         this.processManager.on('statusChange', (status: ProcessStatus, port: number | null) => {
             // 将 ProcessStatus 映射到 McpServerStatus
             let mcpStatus: McpServerStatus;
-            switch (status) { // 使用字符串字面量进行比较
+            switch (status) {
                 case 'running':
                     mcpStatus = 'running';
                     break;
@@ -59,13 +59,7 @@ export class McpServerManager implements vscode.Disposable {
             this.statusBarManager.setStatus(mcpStatus, port);
         });
         this.processManager.on('message', (message: any) => {
-            // 将从子进程收到的消息传递给 IpcHandler 处理
-            // 注意：IpcHandler 内部会处理消息并调用 DebuggerApiWrapper (如果需要)
-            // IpcHandler 内部也负责发送响应回子进程
-            // McpServerManager 在这里不需要直接处理 IPC 消息内容
             this.outputChannel.appendLine(`[Coordinator] Forwarding message from process to IpcHandler: ${JSON.stringify(message)}`);
-            // !! 将消息实际传递给 IpcHandler !!
-            // this.ipcHandler.handleIncomingMessage(message); // 旧逻辑，改为直接处理请求
             if (message && message.type === Constants.IPC_MESSAGE_TYPE_REQUEST) {
                 this.handleRequestFromMCP(message as PluginRequest)
                     .then(response => {
@@ -106,23 +100,6 @@ export class McpServerManager implements vscode.Disposable {
             // IpcHandler 不再直接持有进程引用，无需清理
             // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新
         });
-        // 监听 IpcHandler 发出的需要 Debug API 的请求事件 (如果采用事件驱动方式)
-        // this.ipcHandler.on('debugApiRequest', async (command, payload, requestId) => {
-        //     try {
-        //         let result;
-        //         if (command === 'setBreakpoint') {
-        //             result = await this.debuggerApiWrapper.addBreakpoint(payload);
-        //         } else if (command === 'getBreakpoints') {
-        //             const breakpoints = this.debuggerApiWrapper.getBreakpoints();
-        //             result = { timestamp: new Date().toISOString(), breakpoints: breakpoints };
-        //         } else {
-        //             throw new Error(`Unsupported debug command: ${command}`);
-        //         }
-        //         this.ipcHandler.sendResponseToServer(requestId, 'success', result);
-        //     } catch (error: any) {
-        //         this.ipcHandler.sendResponseToServer(requestId, 'error', undefined, { message: error.message });
-        //     }
-        // });
 
         this.disposables.push(
             this.processManager,
@@ -155,10 +132,10 @@ export class McpServerManager implements vscode.Disposable {
                 case Constants.IPC_COMMAND_REMOVE_BREAKPOINT:
                     responsePayload = await this.debuggerApiWrapper.removeBreakpoint(payload);
                     break;
-                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST: // 注意常量名称
+                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST:
                     responsePayload = await this.debuggerApiWrapper.startDebuggingAndWait(payload.configurationName, payload.noDebug ?? false);
                     break;
-                case Constants.IPC_COMMAND_CONTINUE_DEBUGGING: { // 使用块作用域
+                case Constants.IPC_COMMAND_CONTINUE_DEBUGGING: {
                     this.outputChannel.appendLine(`[Coordinator] Handling 'continue_debugging' request: ${requestId}`);
                     const continueParams = payload as ContinueDebuggingParams;
                     let sessionIdToUse = continueParams.sessionId;
@@ -177,7 +154,7 @@ export class McpServerManager implements vscode.Disposable {
                     this.outputChannel.appendLine(`[Coordinator] 'continue_debugging' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
                     break;
                 }
-                case Constants.IPC_COMMAND_STEP_EXECUTION: { // 使用块作用域
+                case Constants.IPC_COMMAND_STEP_EXECUTION: {
                     this.outputChannel.appendLine(`[Coordinator] Handling '${Constants.IPC_COMMAND_STEP_EXECUTION}' request: ${requestId}`);
                     const stepParams = payload as StepExecutionParams;
                     let sessionIdToUse = stepParams.sessionId;
@@ -196,10 +173,10 @@ export class McpServerManager implements vscode.Disposable {
                     this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STEP_EXECUTION}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
                     break;
                 }
-                case Constants.IPC_COMMAND_STOP_DEBUGGING: { // 使用块作用域
+                case Constants.IPC_COMMAND_STOP_DEBUGGING: {
                     this.outputChannel.appendLine(`[Coordinator] Handling '${Constants.IPC_COMMAND_STOP_DEBUGGING}' request: ${requestId}`);
-                    const stopPayload = payload as StopDebuggingPayload | undefined; // 使用类型断言
-                    const sessionId = stopPayload?.sessionId; // 提取可选的 sessionId
+                    const stopPayload = payload as StopDebuggingPayload | undefined;
+                    const sessionId = stopPayload?.sessionId;
                     // 调用 stopDebugging，传递可选的 sessionId
                     responsePayload = await this.debuggerApiWrapper.stopDebugging(sessionId);
                     this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STOP_DEBUGGING}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
@@ -226,7 +203,6 @@ export class McpServerManager implements vscode.Disposable {
             requestId,
             status,
             payload: status === Constants.IPC_STATUS_SUCCESS ? responsePayload : undefined,
-            // 确保 errorMessage 始终是 string
             error: status === Constants.IPC_STATUS_ERROR ? { message: errorMessage || '发生未知错误' } : undefined,
         };
     }
@@ -244,7 +220,7 @@ export class McpServerManager implements vscode.Disposable {
      */
     public async startServer(): Promise<void> {
         // 防止重复启动 (ProcessManager 内部会处理)
-        if (this.processManager.getStatus() !== 'stopped') { // 使用字符串字面量
+        if (this.processManager.getStatus() !== 'stopped') {
             const status = this.processManager.getStatus();
             const port = this.processManager.getCurrentPort();
             vscode.window.showInformationMessage(`MCP 服务器已在运行或正在启动 (状态: ${status}${port ? `, 端口: ${port}` : ''})。`);
@@ -272,7 +248,6 @@ export class McpServerManager implements vscode.Disposable {
                 }
             }
 
-            // 获取工作区路径
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders || workspaceFolders.length === 0) {
                 vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
@@ -282,42 +257,13 @@ export class McpServerManager implements vscode.Disposable {
             const workspacePath = workspaceFolders[0].uri.fsPath;
             this.outputChannel.appendLine(`[Coordinator] Starting server with Port: ${targetPort}, Workspace: ${workspacePath}`);
 
-            // 启动进程，ProcessManager 会处理状态更新和事件触发
             this.processManager.start(targetPort, workspacePath);
 
-            // 将子进程实例设置给 IpcHandler (在 ProcessManager 内部启动后)
-            // 需要一种方式在 ProcessManager 启动成功后获取 ChildProcess 实例
-            // 方案1: ProcessManager 暴露 getProcess() 方法 (不太好，破坏封装)
-            // 方案2: ProcessManager 在启动成功后发出 'processReady' 事件，携带 process 实例
-            // 暂时采用方案2的思路，但 ProcessManager 当前实现没有这个事件，先假设启动后 process 实例可用
-            // **修正:** ProcessManager 内部已经监听了 message 事件，不需要在这里再次设置
-            // 但是 IpcHandler 需要知道 process 实例来发送消息。
-            // 改进 ProcessManager，使其在启动后能提供 process 实例，或者 IpcHandler 直接依赖 ProcessManager.send()
-            // **再次修正:** IpcHandler 应该依赖 ProcessManager 来发送消息，而不是直接持有 process 实例。
-            // **最终决定:** IpcHandler 依赖 ProcessManager 发送消息。ProcessManager 内部持有 process。
-            // McpServerManager 监听 ProcessManager 的 'message' 事件，然后调用 IpcHandler.handleMessage()。
-            // IpcHandler.handleMessage() 处理消息，如果需要发送响应，调用 ProcessManager.send()。
-
-            // **当前实现调整:** ProcessManager 已经 emit('message')，并且 IpcHandler 构造时传入了 DebuggerApiWrapper。
-            // IpcHandler 内部的 registerMessageListener 需要修改为 handleMessage(message)，并且发送响应时调用 this.processManager.send()
-            // **因此，这里不需要显式设置 IpcHandler 的 process**
-
-            // **重要:** 需要修改 IpcHandler 以依赖 ProcessManager 发送消息。
-            // **暂时维持现状:** 让 IpcHandler 暂时持有 process 实例，后续再优化。
-            // 需要在 ProcessManager 启动后将 process 实例传递给 IpcHandler。
-            // 添加一个事件监听器，等待 ProcessManager 状态变为 'running' 或 'starting' 后设置
             const onStatusChange = (status: ProcessStatus) => {
-                if (status === 'running' || status === 'starting') { // 使用字符串字面量
-                    // 假设 ProcessManager 有一个 getInternalProcess 方法 (需要添加)
-                    // const processInstance = this.processManager.getInternalProcess();
-                    // if (processInstance) {
-                    //     this.ipcHandler.setProcess(processInstance);
-                    //     this.outputChannel.appendLine(`[Coordinator] Set process instance in IpcHandler.`);
-                    // }
-                    // 移除监听器，避免重复设置
+                if (status === 'running' || status === 'starting') {
                     this.processManager.off('statusChange', onStatusChange);
-                } else if (status === 'error' || status === 'stopped') { // 使用字符串字面量
-                    this.processManager.off('statusChange', onStatusChange); // 如果启动失败也移除
+                } else if (status === 'error' || status === 'stopped') {
+                    this.processManager.off('statusChange', onStatusChange);
                 }
             };
             this.processManager.on('statusChange', onStatusChange);
@@ -350,14 +296,9 @@ export class McpServerManager implements vscode.Disposable {
         // StatusBarManager 和 IpcHandler 的状态会通过 ProcessManager 的事件更新和重新设置
         // 可能需要重新设置 IpcHandler 的 process 实例，逻辑同 startServer
         const onStatusChange = (status: ProcessStatus) => {
-            if (status === 'running' || status === 'starting') { // 使用字符串字面量
-                // const processInstance = this.processManager.getInternalProcess(); // 假设方法存在
-                // if (processInstance) {
-                //     this.ipcHandler.setProcess(processInstance);
-                //     this.outputChannel.appendLine(`[Coordinator] Re-set process instance in IpcHandler after restart.`);
-                // }
+            if (status === 'running' || status === 'starting') {
                 this.processManager.off('statusChange', onStatusChange);
-            } else if (status === 'error' || status === 'stopped') { // 使用字符串字面量
+            } else if (status === 'error' || status === 'stopped') {
                 this.processManager.off('statusChange', onStatusChange);
             }
         };
@@ -422,10 +363,7 @@ export class McpServerManager implements vscode.Disposable {
                     if (!isValidPort(portNum)) {
                         return '请输入 1025 到 65535 之间的有效端口号。';
                     }
-                    // 可以在这里添加额外的检查，例如再次检查新端口是否被占用
-                    // const isNewPortInUse = await isPortInUse(portNum);
-                    // if (isNewPortInUse) { return `端口 ${portNum} 也被占用了。`; }
-                    return null; // 验证通过
+                    return null;
                 }
             });
 
@@ -453,7 +391,6 @@ export class McpServerManager implements vscode.Disposable {
         vscode.Disposable.from(...this.disposables).dispose();
         // 移除所有事件监听器 (虽然 ProcessManager dispose 时会移除，但以防万一)
         this.processManager.removeAllListeners();
-        // this.ipcHandler.removeAllListeners(); // 如果 IpcHandler 是 EventEmitter
     }
 
 }

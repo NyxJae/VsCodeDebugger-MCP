@@ -1,13 +1,11 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
-import { StatusBarManager } from './statusBarManager'; // 导入 StatusBarManager
-import { McpServerManager } from './mcpServerManager'; // 导入 McpServerManager
-import { getStoredPort, storePort } from './configManager'; // 导入配置管理函数
-import { isValidPort } from './utils/portUtils'; // 导入端口工具函数
-import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper'; // 导入 DebuggerApiWrapper
-import { IpcHandler } from './managers/ipcHandler'; // 导入 IpcHandler
-import { ProcessManager } from './managers/processManager'; // 导入 ProcessManager
+import { StatusBarManager } from './statusBarManager';
+import { McpServerManager } from './mcpServerManager';
+import { getStoredPort, storePort } from './configManager';
+import { isValidPort } from './utils/portUtils';
+import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
+import { IpcHandler } from './managers/ipcHandler';
+import { ProcessManager } from './managers/processManager';
 
 // 声明模块级变量来持有实例
 let statusBarManager: StatusBarManager;
@@ -15,14 +13,10 @@ let mcpServerManager: McpServerManager;
 let debuggerApiWrapper: DebuggerApiWrapper;
 let ipcHandler: IpcHandler;
 let processManager: ProcessManager;
-let outputChannel: vscode.OutputChannel; // 添加 OutputChannel 变量
+let outputChannel: vscode.OutputChannel;
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
 	console.log('Congratulations, your extension "vscode-debugger-mcp" is now active!');
 
 	// 创建 OutputChannel
@@ -31,44 +25,40 @@ export function activate(context: vscode.ExtensionContext) {
 	// 暂时创建一个给 IpcHandler 使用 (虽然 IpcHandler 内部也会创建，但构造函数需要一个)
 	// 更好的做法是让 McpServerManager 创建并传递给需要的组件
 	outputChannel = vscode.window.createOutputChannel('Debug MCP Extension');
-	context.subscriptions.push(outputChannel); // 添加到清理列表
+	context.subscriptions.push(outputChannel);
 
 	// 实例化依赖项
 	statusBarManager = new StatusBarManager(context);
 	debuggerApiWrapper = new DebuggerApiWrapper();
-	// 传入 extensionPath 给 ProcessManager
 	processManager = new ProcessManager(context.extensionPath);
-	// 传入 outputChannel 和 processManager 给 IpcHandler
 	ipcHandler = new IpcHandler(outputChannel, processManager);
 
 
-	// 实例化 McpServerManager，并传入正确的依赖项 (5个)
+	// 实例化 McpServerManager，并传入正确的依赖项
 	mcpServerManager = new McpServerManager(
 		context,
 		statusBarManager,
-		processManager, // 传入 processManager
-		ipcHandler,     // 传入 ipcHandler
-		debuggerApiWrapper // 传入 debuggerApiWrapper
+		processManager,
+		ipcHandler,
+		debuggerApiWrapper
 	);
 
 	// 注册状态栏项点击时触发的命令
 	const showServerMenuCommand = vscode.commands.registerCommand(statusBarManager.commandId, () => {
-		// 调用 Quick Pick 菜单函数，并传入 context 和两个 manager 实例
 		showServerActionMenu(context, statusBarManager, mcpServerManager);
 	});
 
 	// 注册复制配置命令
 	const copyMcpConfigCommand = vscode.commands.registerCommand('DebugMcpManager.copyMcpConfig', () => {
-		mcpServerManager.copyMcpConfigToClipboard(); // 调用 McpServerManager 的新方法
+		mcpServerManager.copyMcpConfigToClipboard();
 	});
 
 	// 将命令和 manager 实例添加到 context.subscriptions 以便自动清理
 	context.subscriptions.push(showServerMenuCommand, copyMcpConfigCommand, statusBarManager, mcpServerManager);
-	// 注意这里添加了 copyMcpConfigCommand
 
 }
 
-// 新增的 showServerActionMenu 函数
+// showServerActionMenu 函数
 async function showServerActionMenu(context: vscode.ExtensionContext, manager: StatusBarManager, serverManager: McpServerManager): Promise<void> {
 	const status = manager.getStatus();
 	const items: vscode.QuickPickItem[] = [];
@@ -103,13 +93,13 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 	// 添加 "更改端口" 选项
 	const changePortItem: vscode.QuickPickItem & { action: () => Promise<void> } = {
 		label: '$(gear) 更改服务器端口',
-		description: `当前配置端口: ${getStoredPort(context)}`, // 显示当前存储的端口
+		description: `当前配置端口: ${getStoredPort(context)}`,
 		action: async () => {
 			const currentPort = getStoredPort(context);
 			const newPortStr = await vscode.window.showInputBox({
 				prompt: `请输入新的 MCP 服务器端口号 (1025-65535)`,
 				placeHolder: `当前: ${currentPort}`,
-				value: currentPort.toString(), // 预填当前值
+				value: currentPort.toString(),
 				validateInput: (value) => {
 					if (!value) {return '端口号不能为空。';}
 					if (!isValidPort(value)) {
@@ -153,7 +143,6 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 		title: "Debug-MCP Control"
 	});
 
-	// 确保 selectedOption 存在，并且它确实有 action 属性，然后才调用
 	if (selectedOption) {
 		const actionItem = selectedOption as ActionQuickPickItem;
 		if (actionItem.action) {
@@ -162,9 +151,7 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 	}
 }
 
-// This method is called when your extension is deactivated
 export function deactivate() {
 	// 清理工作由 VS Code 通过 context.subscriptions 自动处理
-	// statusBarManager 和 mcpServerManager 的 dispose 方法会被调用
 	console.log('Deactivating vscode-debugger-mcp extension...');
 }

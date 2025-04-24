@@ -476,22 +476,6 @@ vscode 插件部分不需要 webview
 - 开发 step_execution 工具
 - continue_debugging 工具 必需要 session_id 而 step_execution 不需要 session_id,不统一,那优化下,让 step_execution 工具和  continue_debugging 工具 都接受session_id 但是可选项,不传递默认获取当前的会话.以后需要session_id 的 工具 也相同办法处理
 - stop_debugging 工具开发
+- 最核心的工具已经开发完毕,准备发布V1.0 版本,以下是发布前准备
 ### 当前任务
-- stop_debugging 工具 有问题
-- [stderr] [DEBUG] Received POST to /messages for sessionId: 2b1e5d27-8775-4f6a-84b5-8267c1c458d2
-[stderr] [DEBUG] Successfully handled POST message for sessionId: 2b1e5d27-8775-4f6a-84b5-8267c1c458d2
-[INFO] [MCP Server] Executing tool: stop_debugging
-[stdout] [MCP Server] handleStopDebugging called with args: {}
-[IPC Received] {"type":"request","command":"vscode-debugger-mcp:stopDebugging","requestId":"bc9091e0-9433-4548-a6ff-897e99de5f89","payload":{}}
-[IPC Sent] Queued: true - Message: {"type":"response","requestId":"bc9091e0-9433-4548-a6ff-897e99de5f89","status":"error","error":{"message":"不支持的命令: vscode-debugger-mcp:stopDebugging"}}
-[IPC Send Success Callback] Message sent successfully (async confirmation).
-[stderr] [MCP Server] Error communicating with plugin for stopDebugging: Error: 不支持的命令: vscode-debugger-mcp:stopDebugging
-    at handlePluginResponse (e:\Project\VsCodeDebugger-MCP\mcp-server\dist\pluginCommunicator.js:56:28)
-    at process.<anonymous> (e:\Project\VsCodeDebugger-MCP\mcp-server\dist\server.js:370:55)
-    at process.emit (node:events:518:28)
-    at emit (node:internal/child_process:950:14)
-    at process.processTicksAndRejections (node:internal/process/task_queues:83:21)
-[INFO] [MCP Server] Tool stop_debugging execution result: {
-  status: 'error',
-  message: '与插件通信失败: 不支持的命令: vscode-debugger-mcp:stopDebugging'
-}
+- 1.遍历项目中的 mcp-server 和 src 这俩核心文件夹,逐个文件清理多余注释,且优化必要注释(只针对.ts代码文件)

@@ -1,7 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 
 // 定义 PluginRequest 接口
-// 定义 PluginRequest 接口 (与 src/mcpServerManager.ts 一致)
 export interface PluginRequest {
     type: 'request';
     command: string; // 请求类型，例如 'setBreakpoint'
@@ -18,10 +17,10 @@ export interface PluginResponse<P = any, E = { message: string }> {
     error?: E; // 如果失败，包含错误信息对象 (泛型)
 }
 
-// 用于存储待处理的请求 Promise (更新 resolve 类型以匹配泛型 PluginResponse)
+// 用于存储待处理的请求 Promise
 const pendingRequests = new Map<string, { resolve: (response: PluginResponse<any>) => void, reject: (error: Error) => void, timeout: NodeJS.Timeout }>();
 
-// 向插件发送请求 (更新返回值类型以匹配泛型 PluginResponse)
+// 向插件发送请求
 // 注意：现在直接接受包含 'command' 字段的对象
 export function sendRequestToPlugin<T = any>(request: { command: string; payload?: any }, timeoutMs: number = 5000): Promise<PluginResponse<T>> {
     return new Promise<PluginResponse<T>>((resolve, reject) => { // 返回泛型 Promise
@@ -55,7 +54,7 @@ export function sendRequestToPlugin<T = any>(request: { command: string; payload
     });
 }
 
-// 处理来自插件的响应 (更新参数类型以匹配泛型 PluginResponse)
+// 处理来自插件的响应
 export function handlePluginResponse(response: PluginResponse<any>): void {
     // 基本类型检查，确保是预期的响应结构
     if (response?.type !== 'response' || !response.requestId) {
@@ -80,6 +79,3 @@ export function handlePluginResponse(response: PluginResponse<any>): void {
         console.warn(`[MCP Server] Received response for unknown or timed out request ID: ${response.requestId}`);
     }
 }
-
-// 导出相关函数或实例，这里直接导出函数
-// export const pluginCommunicator = { sendRequestToPlugin, handlePluginResponse };
