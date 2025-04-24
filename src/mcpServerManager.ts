@@ -194,6 +194,7 @@ export class McpServerManager implements vscode.Disposable {
                     // 调用 DebuggerApiWrapper 处理单步执行，此时 sessionIdToUse 必为 string
                     responsePayload = await this.debuggerApiWrapper.stepExecutionAndWait(sessionIdToUse, stepParams.thread_id, stepParams.step_type);
                     this.outputChannel.appendLine(`[Coordinator] '${Constants.IPC_COMMAND_STEP_EXECUTION}' result for ${requestId}: ${JSON.stringify(responsePayload)}`);
+                    break;
                 }
                 default:
                     throw new Error(`不支持的命令: ${command}`);

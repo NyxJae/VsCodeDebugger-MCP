@@ -473,4 +473,6 @@ vscode 插件部分不需要 webview
 - 重构优化src/vscode/debuggerApiWrapper.ts,将大文件拆分成小文件,优化项目结构
 - 开发继续调试工具
 - 开发 step_execution 工具
+- 有个问题 continue_debugging 工具 必需要 session_id 而 step_execution 不需要 session_id,那优化下,让 step_execution 工具和  continue_debugging 工具 都接受session_id 但是可选项,不传递默认获取当前的会话.
 ### 当前任务
+- step_execution 工具 调用时出错

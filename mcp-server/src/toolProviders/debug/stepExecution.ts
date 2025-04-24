@@ -52,8 +52,8 @@ export const stepExecutionTool = { // <--- 直接导出对象
                     command: IPC_COMMAND_STEP_EXECUTION, // 使用 IPC 命令常量
                     payload: { // 明确构造 payload
                         sessionId: sessionId, // 可能为 undefined
-                        threadId: threadId,
-                        stepType: stepType,
+                        thread_id: threadId, // 使用 snake_case
+                        step_type: stepType, // 使用 snake_case
                     }
                 },
                 65000 // 设置超时时间 (例如 65 秒, 与 continue 保持一致)
