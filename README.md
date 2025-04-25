@@ -1,71 +1,77 @@
-# vscode-debugger-mcp README
+# VSCode Debugger MCP
 
-This is the README for your extension "vscode-debugger-mcp". After writing up a brief description, we recommend including the following sections.
+[![English](https://img.shields.io/badge/Language-English-blue)](README.en.md)
 
-## Features
+这是一个 VS Code 扩展，旨在通过 Model Context Protocol (MCP) 服务器，使 AI 代理能够与 VS Code 的调试功能进行交互，从而实现自动化和智能化的调试体验。使用[RooCode](https://github.com/RooVetGit/Roo-Code)辅助开发
 
-Describe specific features of your extension including screenshots of your extension in action. Image paths are relative to this README file.
+## ✨ 特性
 
-For example if there is an image subfolder under your extension project workspace:
+*   **🤖 AI 驱动的调试**:
+    *   通过 MCP 工具接口，允许 AI 代理执行标准的 VS Code 调试操作。
+    *   **调试配置**: 读取项目中的 `launch.json` 文件，获取可用的调试配置。
+    *   **断点管理**: 设置、移除和查询断点，支持常规断点、条件断点、命中次数断点和日志点。
+    *   **执行控制**: 启动调试会话（`launch` 或 `attach` 模式）、继续执行 (`Continue`)、单步执行（`Step Over`, `Step Into`, `Step Out`）以及停止调试会话。
+    *   **(未来)** 检查变量值、遍历调用栈、在特定上下文中求值表达式等。
+*   **⚙️ MCP 服务器管理**:
+    *   **状态栏集成**: 在 VS Code 状态栏实时显示 MCP 服务器的运行状态（例如 "Debug-MCP: Running" 或 "Debug-MCP: Stopped"）。
+    *   **便捷控制**: 点击状态栏项可快速启动或停止 MCP 服务器。
+    *   **端口配置**: 自动检测端口占用。如果默认端口被占用，允许用户手动指定一个新的端口号，该设置会持久化保存。
+    *   **自动启动**: 可配置是否在 VS Code 启动时自动启动 MCP 服务器。
+    *   **客户端配置**: 提供一键复制功能，方便将连接此 MCP 服务器所需的配置信息（如 URL、端口）复制到 AI 客户端（如 ClaudeDesktop, RooCode, Cline, Cursor 等）。
+*   **📡 通信协议**:
+    *   VS Code 扩展与本地 MCP 服务器之间通过子进程和 IPC 通信。
+    *   MCP 服务器与 AI 客户端之间使用 **HTTP + Server-Sent Events (SSE)** 进行通信，确保实时性和可靠性。
 
-\!\[feature X\]\(images/feature-x.png\)
+## 🚀 要求
 
-> Tip: Many popular extensions utilize animations. This is an excellent way to show off your extension! We recommend short, focused animations that are easy to follow.
+*   **Visual Studio Code**: ^1.85.0 或更高版本。
+*   **Node.js**: ^18.0.0 或更高版本 (用于运行 MCP 服务器)。
+*   **如何安装 Node.js**: 请访问 [Node.js 官方网站](https://nodejs.org/) 下载并安装适合您操作系统的版本。
+*   **AI客户端** 支持 Model Context Protocol 的 AI 代理客户端。
 
-## Requirements
+## 🔧 扩展设置
 
-If you have any requirements or dependencies, add a section describing those and how to install and configure them.
+本扩展提供以下 VS Code 设置项 (`settings.json`):
 
-## Extension Settings
+*   `vscode-debugger-mcp.server.port` (number): MCP 服务器监听的端口号。默认为 `6009`。
+*   `vscode-debugger-mcp.server.autoStart` (boolean): 是否在 VS Code 启动时自动启动 MCP 服务器。默认为 `true`。
 
-Include if your extension adds any VS Code settings through the `contributes.configuration` extension point.
+## 🐞 已知问题/潜在问题
 
-For example:
+*   只在 RooCode 这一种做过简单测试,尚不清楚在其他客户端工作情况
 
-This extension contributes the following settings:
+## 🔮 未来开发计划
 
-* `myExtension.enable`: Enable/disable this extension.
-* `myExtension.thing`: Set to `blah` to do something.
+*   **变量与作用域检查**:
+    *   实现 `get_scopes` 工具：获取指定堆栈帧的作用域（如局部变量、全局变量）。
+    *   实现 `get_variables` 工具：获取指定作用域或可展开变量下的变量列表及其值。
+*   **表达式求值**:
+    *   实现 `evaluate_expression` 工具：在指定的堆栈帧上下文中计算表达式。
+*   **国际化**
+*   *   工具提示词转为英文
+## 🎉 发布说明
 
-## Known Issues
+### 0.4.0
+*   实现 `stop_debugging` 工具。
+*   实现 `step_execution` 工具 (Step Over, Step Into, Step Out)。
+*   实现 `continue_debugging` 工具。
+*   实现 `start_debugging` 工具。
+*   实现 `remove_breakpoint` 工具。
+*   实现 `get_breakpoints` 工具。
+*   实现 `set_breakpoint` 工具。
+*   实现 `get_debugger_configurations` 工具。
+*   MCP 服务器通信方式为 HTTP + SSE。
+*   增加端口冲突处理和手动指定端口功能。
+*   增加自动启动 MCP 服务器的配置选项。
+*   提供一键复制客户端配置的功能。
 
-Calling out known issues can help limit users opening duplicate issues against your extension.
-
-## Release Notes
-
-Users appreciate release notes as you update your extension.
-
-### 1.0.0
-
-Initial release of ...
-
-### 1.0.1
-
-Fixed issue #.
-
-### 1.1.0
-
-Added features X, Y, and Z.
+### 0.1.0
+*   初始版本。
+*   实现 VS Code 扩展基本结构。
+*   在状态栏显示 MCP 服务器状态（模拟）。
+*   实现简单的 MCP 服务器启停控制（通过状态栏）。
 
 ---
 
-## Following extension guidelines
-
-Ensure that you've read through the extensions guidelines and follow the best practices for creating your extension.
-
-* [Extension Guidelines](https://code.visualstudio.com/api/references/extension-guidelines)
-
-## Working with Markdown
-
-You can author your README using Visual Studio Code. Here are some useful editor keyboard shortcuts:
-
-* Split the editor (`Cmd+\` on macOS or `Ctrl+\` on Windows and Linux).
-* Toggle preview (`Shift+Cmd+V` on macOS or `Shift+Ctrl+V` on Windows and Linux).
-* Press `Ctrl+Space` (Windows, Linux, macOS) to see a list of Markdown snippets.
-
-## For more information
-
-* [Visual Studio Code's Markdown Support](http://code.visualstudio.com/docs/languages/markdown)
-* [Markdown Syntax Reference](https://help.github.com/articles/markdown-basics/)
-
-**Enjoy!**
+## 感谢以下优秀开源项目
+[RooCode](https://github.com/RooVetGit/Roo-Code)

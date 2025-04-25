@@ -34,7 +34,7 @@ const GetDebuggerConfigurationsOutputSchema = z.object({
 // --- 新增：定义工具对象 ---
 export const getDebuggerConfigurationsTool = {
     name: Constants.TOOL_GET_DEBUGGER_CONFIGURATIONS,
-    description: "读取 VS Code 工作区的 .vscode/launch.json 文件并返回其调试配置列表。",
+    description: "读取 VS Code 工作区的 .vscode/launch.json 文件并返回其调试配置列表。开始调试前务必使用此工具获取调试配置",
     inputSchema: GetDebuggerConfigurationsInputSchema,
     outputSchema: GetDebuggerConfigurationsOutputSchema,
 
