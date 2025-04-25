@@ -6,6 +6,7 @@ import { continueDebuggingTool } from './toolProviders/debug/continueDebugging';
 import { stepExecutionTool } from './toolProviders/debug/stepExecution';
 import * as Constants from './constants';
 import { StepExecutionParams } from './types';
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 /**
  * 注册所有 MCP 调试工具及其适配器逻辑。
@@ -19,11 +20,11 @@ export function registerTools() {
     server.tool(
         DebugTools.getDebuggerConfigurationsTool.name,
         DebugTools.getDebuggerConfigurationsTool.inputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = DebugTools.getDebuggerConfigurationsTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName}`);
             try {
-                const result = await DebugTools.getDebuggerConfigurationsTool.execute(args);
+                const result = await DebugTools.getDebuggerConfigurationsTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result status: ${result.status}`);
 
                 let responseContent = "";
@@ -63,11 +64,11 @@ export function registerTools() {
     server.tool(
         DebugTools.setBreakpointTool.name,
         DebugTools.setBreakpointTool.inputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = DebugTools.setBreakpointTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with args:`, args);
             try {
-                const result = await DebugTools.setBreakpointTool.execute(args);
+                const result = await DebugTools.setBreakpointTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result status: ${result.status}`);
 
                 let responseContent = "";
@@ -107,11 +108,11 @@ export function registerTools() {
     server.tool(
         DebugTools.getBreakpointsTool.name,
         DebugTools.getBreakpointsTool.inputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = DebugTools.getBreakpointsTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName}`);
             try {
-                const result = await DebugTools.getBreakpointsTool.execute(args);
+                const result = await DebugTools.getBreakpointsTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result status: ${result.status}`);
 
                 let responseContent = "";
@@ -155,11 +156,11 @@ export function registerTools() {
     server.tool(
         DebugTools.removeBreakpointTool.name,
         DebugTools.removeBreakpointTool.baseinputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = DebugTools.removeBreakpointTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with validated args:`, args);
             try {
-                const result = await DebugTools.removeBreakpointTool.execute(args);
+                const result = await DebugTools.removeBreakpointTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result status: ${result.status}`);
 
                 let responseContent = result.message || (result.status === Constants.IPC_STATUS_SUCCESS ? "操作成功完成。" : "发生未知错误。");
@@ -190,11 +191,11 @@ export function registerTools() {
     server.tool(
         DebugTools.startDebuggingTool.name,
         DebugTools.startDebuggingTool.inputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = DebugTools.startDebuggingTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with args:`, args);
             try {
-                const result = await DebugTools.startDebuggingTool.execute(args);
+                const result = await DebugTools.startDebuggingTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result:`, result);
 
                 let responseContent = "";
@@ -235,11 +236,11 @@ export function registerTools() {
     server.tool(
         continueDebuggingTool.name,
         continueDebuggingTool.inputSchema.shape,
-        async (args, extra) => {
+        async (args, extra: RequestHandlerExtra) => { // 添加 extra 类型
             const toolName = continueDebuggingTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with args:`, args);
             try {
-                const result = await continueDebuggingTool.execute(args);
+                const result = await continueDebuggingTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result:`, result);
 
                 let responseContent = `Status: ${result.status}`;
@@ -274,11 +275,11 @@ export function registerTools() {
     server.tool(
         stepExecutionTool.name,
         stepExecutionTool.inputSchema.shape,
-        async (args: StepExecutionParams, extra: any) => {
+        async (args: StepExecutionParams, extra: RequestHandlerExtra) => { // 修正 extra 类型
             const toolName = stepExecutionTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with args:`, args);
             try {
-                const result = await stepExecutionTool.execute(args);
+                const result = await stepExecutionTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result:`, result);
 
                 let responseContent = `Status: ${result.status}`;
@@ -313,11 +314,11 @@ export function registerTools() {
     server.tool(
         DebugTools.stopDebuggingTool.name,
         DebugTools.stopDebuggingTool.inputSchema.shape,
-        async (args: z.infer<typeof DebugTools.stopDebuggingTool.inputSchema>, extra: any) => {
+        async (args: z.infer<typeof DebugTools.stopDebuggingTool.inputSchema>, extra: RequestHandlerExtra) => { // 修正 extra 类型
             const toolName = DebugTools.stopDebuggingTool.name;
             logger.info(`[MCP Server Adapter] Executing tool: ${toolName} with args:`, args);
             try {
-                const result = await DebugTools.stopDebuggingTool.execute(args);
+                const result = await DebugTools.stopDebuggingTool.execute(args, extra); // 传递 extra
                 logger.info(`[MCP Server Adapter] Tool ${toolName} execution result status: ${result.status}`);
 
                 let responseContent = result.message || (result.status === Constants.IPC_STATUS_SUCCESS ? "停止调试操作已成功请求。" : "停止调试时发生未知错误。");

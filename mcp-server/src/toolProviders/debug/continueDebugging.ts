@@ -3,6 +3,7 @@ import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import { ContinueDebuggingParams, StartDebuggingResponsePayload } from '../../types';
 import * as Constants from '../../constants'; // Import Constants
 import { logger } from '../../config'; // 导入 logger
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 const ContinueDebuggingParamsSchema = z.object({
     session_id: z.string().optional().describe("目标调试会话的 ID。如果省略，将尝试使用当前活动的调试会话。"),
@@ -25,7 +26,7 @@ export const continueDebuggingTool = {
 
     async execute(
         params: ContinueDebuggingParams,
-        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
+        extra?: RequestHandlerExtra // 修改参数为 extra
     ): Promise<z.infer<typeof AsyncDebugResultSchema>> {
         const toolName = this.name;
         try {
@@ -44,14 +45,15 @@ export const continueDebuggingTool = {
                 }
             }, 65000); // 设置超时时间 (65 秒)
 
-            // --- 新增 IPC 响应处理日志 ---
-            const transportSessionId = context?.transport?.sessionId; // Use a different name to avoid conflict
+            // --- 更新 IPC 响应处理日志 ---
+            const transportSessionId = extra?.sessionId; // 从 extra 获取 sessionId
             const payloadSnippet = JSON.stringify(response.payload).substring(0, 100);
 
             if (transportSessionId) {
                 logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${response.requestId}, status: ${response.status}. Preparing SSE send to sessionId: ${transportSessionId}. Payload snippet: ${payloadSnippet}...`);
             } else {
-                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+                // 注意：此警告现在更可能触发，因为 extra 可能不包含 sessionId，除非 SDK 明确传递
+                logger.warn(`[MCP Server - ${toolName}] No sessionId found in extra for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
             }
             // --- 日志结束 ---
 

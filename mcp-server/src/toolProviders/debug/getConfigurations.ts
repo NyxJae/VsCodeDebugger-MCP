@@ -3,6 +3,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import * as Constants from '../../constants';
 import { logger } from '../../config'; // 导入 logger
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 // 定义 launch.json 配置项结构
 interface LaunchConfiguration {
@@ -41,9 +42,10 @@ export const getDebuggerConfigurationsTool = {
 
     async execute(
         args: z.infer<typeof GetDebuggerConfigurationsInputSchema>,
-        // extra: any // 如果需要 extra 参数可以取消注释
+        extra?: RequestHandlerExtra // 添加可选的 extra 参数
     ): Promise<z.infer<typeof GetDebuggerConfigurationsOutputSchema>> {
         const toolName = this.name; // 获取工具名称以便日志记录
+        // logger.debug(`[MCP Tool - ${toolName}] Received extra:`, extra); // 可选：记录接收到的 extra
         const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
 
         if (!workspacePath) {

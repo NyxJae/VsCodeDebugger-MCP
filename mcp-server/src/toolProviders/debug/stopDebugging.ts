@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
 import { logger } from '../../config'; // 导入 logger
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 // Input Schema (Keep as is)
 export const stopDebuggingSchema = z.object({
@@ -26,7 +27,7 @@ export const stopDebuggingTool = {
 
     async execute(
         args: StopDebuggingArgs,
-        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
+        extra?: RequestHandlerExtra // 修改参数为 extra
     ): Promise<z.infer<typeof StopDebuggingOutputSchema>> {
         const toolName = this.name;
         logger.info(`[MCP Tool - ${toolName}] Executing with args:`, args); // 使用 logger
@@ -38,14 +39,15 @@ export const stopDebuggingTool = {
                  payload: { sessionId: args.sessionId } // Pass args directly
             });
 
-            // --- 新增 IPC 响应处理日志 ---
-            const transportSessionId = context?.transport?.sessionId;
+            // --- 更新 IPC 响应处理日志 ---
+            const transportSessionId = extra?.sessionId; // 从 extra 获取 sessionId
             const payloadSnippet = JSON.stringify(response.payload).substring(0, 100);
 
             if (transportSessionId) {
                 logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${response.requestId}, status: ${response.status}. Preparing SSE send to sessionId: ${transportSessionId}. Payload snippet: ${payloadSnippet}...`);
             } else {
-                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+                // 注意：此警告现在更可能触发，因为 extra 可能不包含 sessionId，除非 SDK 明确传递
+                logger.warn(`[MCP Server - ${toolName}] No sessionId found in extra for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
             }
             // --- 日志结束 ---
 

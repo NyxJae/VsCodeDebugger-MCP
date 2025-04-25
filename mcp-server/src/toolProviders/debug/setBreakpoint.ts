@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
 import { logger } from '../../config'; // 导入 logger
+import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 // 输入 Schema (保持不变)
 export const setBreakpointSchema = z.object({
@@ -44,7 +45,7 @@ export const setBreakpointTool = {
 
     async execute(
         args: SetBreakpointArgs,
-        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
+        extra?: RequestHandlerExtra // 修改参数为 extra
     ): Promise<z.infer<typeof SetBreakpointOutputSchema>> {
         const toolName = this.name; // 在日志中使用
         logger.info(`[MCP Tool - ${toolName}] Executing with args:`, args); // 使用 logger
@@ -71,14 +72,15 @@ export const setBreakpointTool = {
             logger.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, payloadForPlugin); // 使用 logger
             const pluginResponse: PluginResponse = await sendRequestToPlugin({ command: Constants.IPC_COMMAND_SET_BREAKPOINT, payload: payloadForPlugin });
 
-            // --- 新增 IPC 响应处理日志 ---
-            const sessionId = context?.transport?.sessionId;
+            // --- 更新 IPC 响应处理日志 ---
+            const sessionId = extra?.sessionId; // 从 extra 获取 sessionId
             const payloadSnippet = JSON.stringify(pluginResponse.payload).substring(0, 100);
 
             if (sessionId) {
                 logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${pluginResponse.requestId}, status: ${pluginResponse.status}. Preparing SSE send to sessionId: ${sessionId}. Payload snippet: ${payloadSnippet}...`);
             } else {
-                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${pluginResponse.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+                // 注意：此警告现在更可能触发，因为 extra 可能不包含 sessionId，除非 SDK 明确传递
+                logger.warn(`[MCP Server - ${toolName}] No sessionId found in extra for requestId ${pluginResponse.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
             }
             // --- 日志结束 ---
 

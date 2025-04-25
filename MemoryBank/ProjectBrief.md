@@ -476,5 +476,52 @@ vscode 插件部分不需要 webview
 - continue_debugging 工具 必需要 session_id 而 step_execution 不需要 session_id,不统一,那优化下,让 step_execution 工具和  continue_debugging 工具 都接受session_id 但是可选项,不传递默认获取当前的会话.以后需要session_id 的 工具 也相同办法处理
 - stop_debugging 工具开发
 - 让插件一运行 就自动开启mcp服务器
+- 给插件端增加一个功能,能接收mcp服务器返回的SSE 信息,也就是,当客户端请求使用了工具,插件端也能通过sse收到信息并打印出来,用于调试
 ### 当前任务
-- 给插件端增加一个功能,能接收mcp服务器返回的SSE 信息,也就是,当客户端请求使用了工具,插件端也能收到信息并打印出来,用于调试
+- 有个bug,尚不清楚怎么稳定触发,就是 调用工具,实际执行了,但客户端收不到返回消息
+例如 客户端 set_breakpoint 调用成功,添加了 断点
+以下是服务器打印 Debug MCP Server Process
+[stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: bdd13a72-6042-4b3b-82ec-7aacb2c5e7e1
+[stderr] [DEBUG] [HTTP Server] Successfully handled POST message for sessionId: bdd13a72-6042-4b3b-82ec-7aacb2c5e7e1
+[INFO] [MCP Server Adapter] Executing tool: set_breakpoint with args: { file_path: 'CodeTools/SVNTool/svn_diff_report.py', line_number: 430 }
+[INFO] [MCP Tool - set_breakpoint] Executing with args: { file_path: 'CodeTools/SVNTool/svn_diff_report.py', line_number: 430 }
+[DEBUG] [MCP Tool - set_breakpoint] Resolved relative path 'CodeTools/SVNTool/svn_diff_report.py' to absolute path 'd:\Personal\Documents\AutoTools\CodeTools\SVNTool\svn_diff_report.py'
+[DEBUG] [MCP Tool - set_breakpoint] Sending request to plugin: {
+  file_path: 'd:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py',
+  line_number: 430
+}
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:setBreakpoint","requestId":"66de75ce-faf0-44d9-9208-fcd516526d63","payload":{"file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":430}}
+[IPC Sent] Queued: true - Message: {"type":"response","requestId":"66de75ce-faf0-44d9-9208-fcd516526d63","status":"success","payload":{"breakpoint":{"id":"7323eb20-3861-4a1e-ad2f-f748346d3f45","verified":true,"enabled":true,"timestamp":"2025-04-25T07:26:42.623Z","source":{"path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py"},"line":430,"column":1}}}
+[IPC Send Success Callback] Message sent successfully (async confirmation).
+[stderr] [WARN] [MCP Server - set_breakpoint] No active transport or sessionId found in context for requestId 66de75ce-faf0-44d9-9208-fcd516526d63 after receiving IPC response. Cannot confirm target SSE session.
+[DEBUG] [MCP Tool - set_breakpoint] Received response from plugin: {
+  type: 'response',
+  requestId: '66de75ce-faf0-44d9-9208-fcd516526d63',
+  status: 'success',
+  payload: {
+    breakpoint: {
+      id: '7323eb20-3861-4a1e-ad2f-f748346d3f45',
+      verified: true,
+      enabled: true,
+      timestamp: '2025-04-25T07:26:42.623Z',
+      source: [Object],
+      line: 430,
+      column: 1
+    }
+  }
+}
+[INFO] [MCP Tool - set_breakpoint] Breakpoint set successfully: {
+  id: '7323eb20-3861-4a1e-ad2f-f748346d3f45',
+  verified: true,
+  source: {
+    path: 'd:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py'
+  },
+  line: 430,
+  column: 1,
+  timestamp: '2025-04-25T07:26:42.623Z'
+}
+[INFO] [MCP Server Adapter] Tool set_breakpoint execution result status: success
+[DEBUG] [MCP Server Adapter] Tool set_breakpoint success response content generated.
+以下是插件中用于调试,接受sse的客户端(其实就是啥也没收到) Debug MCP Server (Coordinator)
+[Coordinator] Forwarding message from process to IpcHandler: {"type":"request","command":"vscode-debugger-mcp:setBreakpoint","requestId":"66de75ce-faf0-44d9-9208-fcd516526d63","payload":{"file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":430}}
+[Coordinator] Handling MCP request: 66de75ce-faf0-44d9-9208-fcd516526d63 - Command: vscode-debugger-mcp:setBreakpoint
