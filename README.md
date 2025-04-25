@@ -2,7 +2,7 @@
 
 [![中文](https://img.shields.io/badge/Language-中文-blue)](README.cn.md)
 
-![1745575964086-PixPin_2025-04-25_17-55-43](https://github.com/user-attachments/assets/ac4cc09f-017e-4266-b617-69398dcadf52)
+![demo_cn](assets/demo_cn.gif)
 
 This is a VS Code extension designed to enable AI agents to interact with VS Code's debugging capabilities through a Model Context Protocol (MCP) server, achieving an automated and intelligent debugging experience. Assisted development using [RooCode](https://github.com/RooVetGit/Roo-Code).
 
@@ -35,9 +35,9 @@ This is a VS Code extension designed to enable AI agents to interact with VS Cod
 
 Taking RooCode as an example:
 1. Search and install the extension in the VS Code Extensions Marketplace.
-2. Confirm that the MCP server is running. ![PixPin_2025-04-25_18-27-06](https://github.com/user-attachments/assets/82c51c61-0e8c-472f-90f3-bf19d5364f20)
-3. Copy the configuration to the RooCode MCP configuration file. ![PixPin_2025-04-25_18-25-22](https://github.com/user-attachments/assets/677e7547-bace-40c2-b9fe-9b68be09a784)
-4. Before each use, check if RooCode is connected to the MCP server. ![PixPin_2025-04-25_18-30-48](https://github.com/user-attachments/assets/2379585d-fbaa-48dc-aa0d-50204a9db1d1)
+Confirm that the MCP server is running. ![MCPRunning_cn](assets/MCPRunning_cn.png)
+Copy the configuration to the RooCode MCP configuration file. ![copy_config_cn](assets/copy_config_cn.gif)
+Before each use, check if RooCode is connected to the MCP server. ![connect_cn](assets/connect_cn.gif)
 
 ## 🔧 Extension Settings
 
@@ -53,8 +53,8 @@ This extension provides the following VS Code settings (`settings.json`):
 ### Logs and Error Information
 
 If you find errors, you can view the logs in the VS Code Output panel for easier feedback and issue reporting.
-*   MCP Server Logs: ![](https://files.catbox.moe/19t08t.png)
-*   Extension and Simulated Client Logs: ![jtnqbb.png](https://files.catbox.moe/jtnqbb.png)
+*   MCP Server Logs: ![mcp_log](assets/mcp_log.png)
+*   Extension and Simulated Client Logs: ![extention_log](assets/extention_log.png)
 
 ## 🔮 Future Development Plan
 

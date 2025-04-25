@@ -2,7 +2,7 @@
 
 [![English](https://img.shields.io/badge/Language-English-blue)](README.md)
 
-![1745575964086-PixPin_2025-04-25_17-55-43](https://github.com/user-attachments/assets/ac4cc09f-017e-4266-b617-69398dcadf52)
+![demo_cn](assets/demo_cn.gif)
 
 这是一个 VS Code 扩展，旨在通过 Model Context Protocol (MCP) 服务器，使 AI 代理能够与 VS Code 的调试功能进行交互，从而实现自动化和智能化的调试体验。使用[RooCode](https://github.com/RooVetGit/Roo-Code)辅助开发
 
@@ -34,9 +34,9 @@
 ## 📖 使用指南
 以RooCode为例
 1. 在VsCode插件市场中搜索安装插件
-2. 确认MCP服务器已开启 ![PixPin_2025-04-25_18-27-06](https://github.com/user-attachments/assets/82c51c61-0e8c-472f-90f3-bf19d5364f20)
-3. 复制配置到RooCodeMCP配置文件中. ![PixPin_2025-04-25_18-25-22](https://github.com/user-attachments/assets/677e7547-bace-40c2-b9fe-9b68be09a784)
-4. 每次使用前,检查RooCode是否和MCP服务器连接. ![PixPin_2025-04-25_18-30-48](https://github.com/user-attachments/assets/2379585d-fbaa-48dc-aa0d-50204a9db1d1)
+2. 确认MCP服务器已开启 ![MCPRunning_cn](assets/MCPRunning_cn.png)
+3. 复制配置到RooCodeMCP配置文件中. ![copy_config_cn](assets/copy_config_cn.gif)
+4. 每次使用前,检查RooCode是否和MCP服务器连接. ![connect_cn](assets/connect_cn.gif)
 
 ## 🔧 扩展设置
 
@@ -51,8 +51,8 @@
 
 ### 日志与报错信息
 如果发现错误,可在VsCode的输出中查看日志,方便反馈提issues.
-*   MCP服务器日志:![](https://files.catbox.moe/19t08t.png)
-*   插件与模拟客户端日志:![jtnqbb.png](https://files.catbox.moe/jtnqbb.png)
+*   MCP服务器日志:![mcp_log](assets/mcp_log.png)
+*   插件与模拟客户端日志:![extention_log](assets/extention_log.png)
 
 ## 🔮 未来开发计划
 
