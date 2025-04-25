@@ -1,6 +1,6 @@
 # VSCode Debugger MCP
 
-[![English](https://img.shields.io/badge/Language-English-blue)](README.md)
+[![中文](https://img.shields.io/badge/Language-English-blue)](README.cn.md)
 
 ![1745575964086-PixPin_2025-04-25_17-55-43](https://github.com/user-attachments/assets/ac4cc09f-017e-4266-b617-69398dcadf52)
 
