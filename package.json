@@ -1,8 +1,14 @@
 {
   "name": "vscode-debugger-mcp",
   "displayName": "VsCode-Debugger-MCP",
-  "description": "",
-  "version": "0.0.1",
+  "description": "一个 VS Code 调试器与 MCP 服务器交互的插件",
+  "version": "1.0.0",
+  "publisher": "NyxJae",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/NyxJae/VsCodeDebugger-MCP.git"
+  },
+  "icon": "assets/icon.png",
   "engines": {
     "vscode": "^1.99.0"
   },
