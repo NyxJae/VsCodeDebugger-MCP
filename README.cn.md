@@ -2,6 +2,7 @@
 
 [![English](https://img.shields.io/badge/Language-English-blue)](README.md)
 
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/NyxJae.vscode-debugger-mcp?style=flat-square&amp;label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=NyxJae.vscode-debugger-mcp)
 ![demo_cn](assets/demo_cn.gif)
 
 这是一个 VS Code 扩展，旨在通过 Model Context Protocol (MCP) 服务器，使 AI 代理能够与 VS Code 的调试功能进行交互，从而实现自动化和智能化的调试体验。使用[RooCode](https://github.com/RooVetGit/Roo-Code)辅助开发
