@@ -34,9 +34,10 @@
 ## 📖 使用指南
 以RooCode为例
 1. 在VsCode插件市场中搜索安装插件
-2. 确认MCP服务器已开启
-3. 复制配置到RooCodeMCP配置文件中
-4. 每次使用前,检查RooCode是否和MCP服务器连接.
+2. 确认MCP服务器已开启 ![PixPin_2025-04-25_18-27-06](https://github.com/user-attachments/assets/82c51c61-0e8c-472f-90f3-bf19d5364f20)
+3. 复制配置到RooCodeMCP配置文件中. ![PixPin_2025-04-25_18-25-22](https://github.com/user-attachments/assets/677e7547-bace-40c2-b9fe-9b68be09a784)
+4. 每次使用前,检查RooCode是否和MCP服务器连接. ![PixPin_2025-04-25_18-30-48](https://github.com/user-attachments/assets/2379585d-fbaa-48dc-aa0d-50204a9db1d1)
+
 ## 🔧 扩展设置
 
 本扩展提供以下 VS Code 设置项 (`settings.json`):
