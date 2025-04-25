@@ -5,7 +5,7 @@
 [![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/NyxJae.vscode-debugger-mcp?style=flat-square&amp;label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=NyxJae.vscode-debugger-mcp)
 ![demo_cn](assets/demo_cn.gif)
 
-This is a VS Code extension designed to enable AI agents to interact with VS Code's debugging capabilities through a Model Context Protocol (MCP) server, achieving an automated and intelligent debugging experience. Assisted development using [RooCode](https://github.com/RooVetGit/Roo-Code).
+This is a VS Code extension designed to enable AI agents to interact with VS Code's debugging capabilities through a Model Context Protocol (MCP) server, achieving an automated and intelligent debugging experience. Assisted development using [RooCode](https://github.com/RooVetGit/Roo-Code) + [Gemini 2.5 Pro](https://deepmind.google/technologies/gemini/pro/).
 
 ## ✨ Features
 
