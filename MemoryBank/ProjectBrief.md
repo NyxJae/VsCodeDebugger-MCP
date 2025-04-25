@@ -12,7 +12,6 @@ vscode 插件部分不需要 webview
 - [VS Code插件开发指南](Docs/Doc_VsCode_Extention.md) - VS Code插件开发基础知识和API指南
 - [通用文档](Docs/Doc_Common.md) - 记录项目经验和收获
 - [变更日志](Docs/ChangeLog.md) - 记录项目版本变更历史
-- [@modelcontextprotocol/sdk文档](Docs/Doc_MCP_SDK.md) - MCP SDK使用说明和API参考
 - [项目结构文档](Docs/Doc_Project_Structure.md) - 描述项目结构和模块职责
 - [MCP官方SDK文档](../Docs/Doc_MCP_README.md)
 - [调试工具开发文档](Docs/Doc_Debug_Tools.md) - VsCode Debugger 工具组规格和实现细节
@@ -478,44 +477,7 @@ vscode 插件部分不需要 webview
 - stop_debugging 工具开发
 - 让插件一运行 就自动开启mcp服务器
 ### 当前任务
-- 在一次客户端启动调试失败后
-以下是 启动失败调试时的各种信息
-- [stdout] [MCP Tool - start_debugging] Executing with args: { configuration_name: 'Python 调试程序: 当前文件', no_debug: false }
-[MCP Tool - start_debugging] Sending request to plugin: { configurationName: 'Python 调试程序: 当前文件', noDebug: false }
-[IPC Received] {"type":"request","command":"vscode-debugger-mcp:startDebuggingRequest","requestId":"33cab261-d63a-4285-a63e-86c6ccd87ce1","payload":{"configurationName":"Python 调试程序: 当前文件","noDebug":false}}
-[stderr] [DEBUG] [HTTP Server] Successfully handled POST message for sessionId: 57e754a4-c347-47c1-8027-779a84b74319
-[INFO] [MCP Server Adapter] Executing tool: start_debugging with args: { configuration_name: 'Python 调试程序: 当前文件', no_debug: false }
-[IPC Sent] Queued: true - Message: {"type":"response","requestId":"33cab261-d63a-4285-a63e-86c6ccd87ce1","status":"success","payload":{"status":"completed","message":"调试会话已结束。"}}
-[IPC Send Success Callback] Message sent successfully (async confirmation).
-[stderr] [INFO] [MCP Server Adapter] Tool start_debugging execution result: { status: 'completed', message: '调试会话已结束。' }
-[DEBUG] [MCP Server Adapter] Tool start_debugging success response content generated.
-[stdout] [MCP Tool - start_debugging] Received response from plugin: {
-  type: 'response',
-  requestId: '33cab261-d63a-4285-a63e-86c6ccd87ce1',
-  status: 'success',
-  payload: { status: 'completed', message: '调试会话已结束。' }
-}
-[MCP Tool - start_debugging] Debugging started/stopped with status: completed
- d:; cd 'd:\Personal\Documents\AutoTools'; & 'd:\ProgramData\anaconda3\envs\simple\python.exe' 'c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\launcher' '7259' '--' 'extension-output-undefined_publisher.vscode-debugger-mcp-#2-Debug MCP Server Process' 
-Traceback (most recent call last):
-  File "d:\ProgramData\anaconda3\envs\simple\Lib\runpy.py", line 198, in _run_module_as_main
-    return _run_code(code, main_globals, None,
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "d:\ProgramData\anaconda3\envs\simple\Lib\runpy.py", line 88, in _run_code
-    exec(code, run_globals)
-  File "c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy\__main__.py", line 71, in <module>
-    cli.main()
-  File "c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy/..\debugpy\server\cli.py", line 501, in main
-    run()
-  File "c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\launcher/../..\debugpy/..\debugpy\server\cli.py", line 351, in run_file
-    runpy.run_path(target, run_name="__main__")
-  File "c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_runpy.py", line 309, in run_path
-    code, fname = _get_code_from_file(run_name, path_name)
-                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "c:\Users\Administrator\.vscode\extensions\ms-python.debugpy-2025.6.0-win32-x64\bundled\libs\debugpy\_vendored\pydevd\_pydevd_bundle\pydevd_runpy.py", line 278, in _get_code_from_file
-    with io_open_code(decoded_path) as f:
-         ^^^^^^^^^^^^^^^^^^^^^^^^^^
-FileNotFoundError: [Errno 2] No such file or directory: 'D:\\Personal\\Documents\\AutoTools\\extension-output-undefined_publisher.vscode-debugger-mcp-#2-Debug MCP Server Process'
+- 有 bug 尚不清楚稳定复现这个bug的条件,好像使用了一会后就会发生, 使用各种工具,客户端都收不到回信息,但该执行的操作还是能执行.
 
 使用 get_breakpoints 工具 ,客户端收不到信息,以下是 服务器端打印
 [stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: 4f1fc994-09aa-4548-97a7-1f9cea1e5f7c
@@ -537,9 +499,62 @@ FileNotFoundError: [Errno 2] No such file or directory: 'D:\\Personal\\Documents
 [stderr] [INFO] [MCP Server Adapter] Tool get_breakpoints execution result status: success
 [DEBUG] [MCP Server Adapter] Tool get_breakpoints success response content generated.
 [IPC Send Success Callback] Message sent successfully (async confirmation).
-get_debugger_configurations 客户端也收不到信息 以下是服务器打印[stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: 4f1fc994-09aa-4548-97a7-1f9cea1e5f7c
+
+get_debugger_configurations 客户端也收不到信息 以下是服务器打印
+[stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: 4f1fc994-09aa-4548-97a7-1f9cea1e5f7c
 [stdout] [MCP Tool - get_debugger_configurations] Successfully read 1 configurations.
 [stderr] [DEBUG] [HTTP Server] Successfully handled POST message for sessionId: 4f1fc994-09aa-4548-97a7-1f9cea1e5f7c
 [INFO] [MCP Server Adapter] Executing tool: get_debugger_configurations
 [INFO] [MCP Server Adapter] Tool get_debugger_configurations execution result status: success
 [DEBUG] [MCP Server Adapter] Tool get_debugger_configurations success response content generated.
+
+step_execution 同样收不到回复信息 以下是 服务器打印
+[INFO] [MCP Server Adapter] Executing tool: step_execution with args: {
+  session_id: 'c65b7b43-b7a2-4f79-b6eb-7513405e8d00',
+  thread_id: 1,
+  step_type: 'over'
+}
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:stepExecution","requestId":"ca2b2487-4bbc-4c17-95c3-67bab7688cbf","payload":{"sessionId":"c65b7b43-b7a2-4f79-b6eb-7513405e8d00","thread_id":1,"step_type":"over"}}
+[IPC Sent] Queued: true - Message: {"type":"response","requestId":"ca2b2487-4bbc-4c17-95c3-67bab7688cbf","status":"success","payload":{"status":"stopped","stop_event_data":{"session_id":"c65b7b43-b7a2-4f79-b6eb-7513405e8d00","timestamp":"2025-04-25T04:53:28.567Z","reason":"step","thread_id":1,"description":null,"text":null,"all_threads_stopped":true,"source":{"path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","name":"svn_diff_report.py"},"line":272,"column":1,"call_stack":[{"frame_id":2,"function_name":"main","file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":272,"column_number":1},{"frame_id":3,"function_name":"<module>","file_path":"d:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py","line_number":430,"column_number":1}],"top_frame_variables":{"scope_name":"Locals","variables":[{"name":"author","value":"'liqifeng'","type":"str","variables_reference":0,"evaluate_name":"author"},{"name":"end_revision","value":"'6190'","type":"str","variables_reference":0,"evaluate_name":"end_revision"},{"name":"folder_path","value":"'D:\\\\UnityProject\\\\RXJH\\\\RXJH_301_red\\\\RedCode'","type":"str","variables_reference":0,"evaluate_name":"folder_path"},{"name":"output_path","value":"'D:\\\\UnityProject\\\\RXJH\\\\RXJH_304\\\\Code304\\\\svnDiff'","type":"str","variables_reference":0,"evaluate_name":"output_path"},{"name":"revision","value":"'6188'","type":"str","variables_reference":0,"evaluate_name":"revision"}]},"hit_breakpoint_ids":null}}}
+[IPC Send Success Callback] Message sent successfully (async confirmation).
+[stderr] [INFO] [MCP Server Adapter] Tool step_execution execution result: {
+  status: 'stopped',
+  stop_event_data: {
+    session_id: 'c65b7b43-b7a2-4f79-b6eb-7513405e8d00',
+    timestamp: '2025-04-25T04:53:28.567Z',
+    reason: 'step',
+    thread_id: 1,
+    description: null,
+    text: null,
+    all_threads_stopped: true,
+    source: {
+      path: 'd:\\Personal\\Documents\\AutoTools\\CodeTools\\SVNTool\\svn_diff_report.py',
+      name: 'svn_diff_report.py'
+    },
+    line: 272,
+    column: 1,
+    call_stack: [ [Object], [Object] ],
+    top_frame_variables: { scope_name: 'Locals', variables: [Array] },
+    hit_breakpoint_ids: null
+  }
+}
+[stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: f83e27f8-606f-4639-b53c-6cf84a81aba6
+[stderr] [DEBUG] [HTTP Server] Successfully handled POST message for sessionId: f83e27f8-606f-4639-b53c-6cf84a81aba6
+
+remove_breakpoint 也收不到回信,但删除了断点
+[stderr] [DEBUG] [HTTP Server] Received POST to /messages for sessionId: 04f80654-76e9-48d5-a98d-fa17aa379e3b
+[stderr] [DEBUG] [HTTP Server] Successfully handled POST message for sessionId: 04f80654-76e9-48d5-a98d-fa17aa379e3b
+[INFO] [MCP Server Adapter] Executing tool: remove_breakpoint with validated args: { clear_all: true }
+[IPC Received] {"type":"request","command":"vscode-debugger-mcp:removeBreakpoint","requestId":"f8df8b04-7624-466b-8252-c3e0d4fe0369","payload":{"clear_all":true}}
+[stdout] [MCP Tool - remove_breakpoint] Executing with validated args: { clear_all: true }
+[IPC Sent] Queued: true - Message: {"type":"response","requestId":"f8df8b04-7624-466b-8252-c3e0d4fe0369","status":"success","payload":{"status":"success","message":"成功移除 4 个断点。"}}
+[IPC Send Success Callback] Message sent successfully (async confirmation).
+[stderr] [INFO] [MCP Server Adapter] Tool remove_breakpoint execution result status: success
+[DEBUG] [MCP Server Adapter] Tool remove_breakpoint success response content generated.
+[stdout] [MCP Tool - remove_breakpoint] Received response from plugin: {
+  type: 'response',
+  requestId: 'f8df8b04-7624-466b-8252-c3e0d4fe0369',
+  status: 'success',
+  payload: { status: 'success', message: '成功移除 4 个断点。' }
+}
+[MCP Tool - remove_breakpoint] Success: 成功移除 4 个断点。

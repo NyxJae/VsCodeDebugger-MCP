@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
+import { logger } from '../../config'; // 导入 logger
 import type { StartDebuggingRequestPayload, StartDebuggingResponsePayload } from '../../types'; // Keep type import
 
 // Input Schema (Keep as is)
@@ -32,10 +33,10 @@ export const startDebuggingTool = {
 
     async execute(
         args: StartDebuggingArgs,
-        // extra: any
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
     ): Promise<z.infer<typeof StartDebuggingOutputSchema>> {
         const toolName = this.name;
-        console.info(`[MCP Tool - ${toolName}] Executing with args:`, args);
+        logger.info(`[MCP Tool - ${toolName}] Executing with args:`, args); // 使用 logger
 
         const payloadForPlugin: StartDebuggingRequestPayload = {
             configurationName: args.configuration_name,
@@ -45,13 +46,25 @@ export const startDebuggingTool = {
         const toolTimeout = 60000; // Keep timeout
 
         try {
-            console.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, payloadForPlugin);
+            logger.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, payloadForPlugin); // 使用 logger
             // Specify the expected response payload type for better type checking
             const pluginResponse: PluginResponse<StartDebuggingResponsePayload> = await sendRequestToPlugin(
                 { command: Constants.IPC_COMMAND_START_DEBUGGING_REQUEST, payload: payloadForPlugin },
                 toolTimeout
             );
-            console.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse);
+
+            // --- 新增 IPC 响应处理日志 ---
+            const sessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(pluginResponse.payload).substring(0, 100);
+
+            if (sessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${pluginResponse.requestId}, status: ${pluginResponse.status}. Preparing SSE send to sessionId: ${sessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${pluginResponse.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse); // 使用 logger
 
             if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload) {
                 // Validate and return the payload according to StartDebuggingOutputSchema
@@ -59,26 +72,26 @@ export const startDebuggingTool = {
                 try {
                     // Directly parse the payload using the output schema
                     const validatedResult = StartDebuggingOutputSchema.parse(pluginResponse.payload);
-                    console.info(`[MCP Tool - ${toolName}] Debugging started/stopped with status: ${validatedResult.status}`);
+                    logger.info(`[MCP Tool - ${toolName}] Debugging started/stopped with status: ${validatedResult.status}`); // 使用 logger
                     return validatedResult;
                 } catch (validationError: any) {
                     const errorMessage = `插件返回的启动调试结果格式无效: ${validationError.message}`;
-                    console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload);
+                    logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                     // Return an error status consistent with the schema
                     return { status: 'error', message: errorMessage };
                 }
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
                 const errorMessage = pluginResponse.error?.message || '插件启动调试失败，未指定错误。';
-                console.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`);
+                logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: 'error', message: errorMessage };
             } else {
                 const errorMessage = '插件返回成功但响应负载格式意外或缺失。';
-                console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload);
+                logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: 'error', message: errorMessage };
             }
 
         } catch (error: any) {
-            console.error(`[MCP Tool - ${toolName}] Error during communication:`, error);
+            logger.error(`[MCP Tool - ${toolName}] Error during communication:`, error); // 使用 logger
             let errorStatus: z.infer<typeof StartDebuggingOutputSchema>['status'] = 'error';
             let errorMessage = `MCP 服务器错误: ${error.message || '未知通信错误'}`;
             if (error.message?.includes('timed out')) {

@@ -2,6 +2,7 @@ import * as path from 'path';
 import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
+import { logger } from '../../config'; // 导入 logger
 
 // 输入 Schema (保持不变)
 export const setBreakpointSchema = z.object({
@@ -43,22 +44,22 @@ export const setBreakpointTool = {
 
     async execute(
         args: SetBreakpointArgs,
-        // extra: any // 如果需要 extra 参数可以取消注释
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
     ): Promise<z.infer<typeof SetBreakpointOutputSchema>> {
         const toolName = this.name; // 在日志中使用
-        console.info(`[MCP Tool - ${toolName}] Executing with args:`, args);
+        logger.info(`[MCP Tool - ${toolName}] Executing with args:`, args); // 使用 logger
 
         const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
         if (!workspacePath) {
             const errorMsg = '无法获取 VS Code 工作区路径 (VSCODE_WORKSPACE_PATH 环境变量未设置)。';
-            console.error(`[MCP Tool - ${toolName}] Error: ${errorMsg}`);
+            logger.error(`[MCP Tool - ${toolName}] Error: ${errorMsg}`); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
         }
 
         let absoluteFilePath = args.file_path;
         if (!path.isAbsolute(args.file_path)) {
             absoluteFilePath = path.resolve(workspacePath, args.file_path);
-            console.debug(`[MCP Tool - ${toolName}] Resolved relative path '${args.file_path}' to absolute path '${absoluteFilePath}'`);
+            logger.debug(`[MCP Tool - ${toolName}] Resolved relative path '${args.file_path}' to absolute path '${absoluteFilePath}'`); // 使用 logger
         }
 
         const payloadForPlugin = {
@@ -67,9 +68,21 @@ export const setBreakpointTool = {
         };
 
         try {
-            console.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, payloadForPlugin);
+            logger.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, payloadForPlugin); // 使用 logger
             const pluginResponse: PluginResponse = await sendRequestToPlugin({ command: Constants.IPC_COMMAND_SET_BREAKPOINT, payload: payloadForPlugin });
-            console.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse);
+
+            // --- 新增 IPC 响应处理日志 ---
+            const sessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(pluginResponse.payload).substring(0, 100);
+
+            if (sessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${pluginResponse.requestId}, status: ${pluginResponse.status}. Preparing SSE send to sessionId: ${sessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${pluginResponse.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse); // 使用 logger
 
             if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload && pluginResponse.payload.breakpoint) {
                 const resultBreakpoint = pluginResponse.payload.breakpoint;
@@ -77,27 +90,27 @@ export const setBreakpointTool = {
                 // 尝试使用 Zod 解析插件返回的断点信息，以确保格式正确
                 try {
                     const validatedBreakpoint = BreakpointInfoSchema.parse(resultBreakpoint);
-                    console.info(`[MCP Tool - ${toolName}] Breakpoint set successfully:`, validatedBreakpoint);
+                    logger.info(`[MCP Tool - ${toolName}] Breakpoint set successfully:`, validatedBreakpoint); // 使用 logger
                     return { status: Constants.IPC_STATUS_SUCCESS, breakpoint: validatedBreakpoint };
                 } catch (validationError: any) {
                      const errorMessage = `插件返回的断点数据格式无效: ${validationError.message}`;
-                     console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, resultBreakpoint);
+                     logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, resultBreakpoint); // 使用 logger
                      return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
                 }
 
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
                 const errorMessage = pluginResponse.error?.message || '插件设置断点失败，未指定错误。';
-                console.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`);
+                logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             } else {
                 const errorMessage = '插件返回成功但响应负载格式意外。';
-                console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload);
+                logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
 
         } catch (error: any) {
             const errorMessage = error?.message || "设置断点时发生通信错误或意外问题。";
-            console.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error);
+            logger.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
         }
     }

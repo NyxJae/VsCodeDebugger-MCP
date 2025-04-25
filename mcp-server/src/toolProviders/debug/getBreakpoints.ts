@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
+import { logger } from '../../config'; // 导入 logger
 
 // 输入 Schema (保持不变)
 export const getBreakpointsSchema = z.object({}).describe("获取当前设置的所有断点，无需参数");
@@ -42,25 +43,38 @@ export const getBreakpointsTool = {
 
     async execute(
         args: GetBreakpointsArgs,
-        // extra: any
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
     ): Promise<z.infer<typeof GetBreakpointsOutputSchema>> {
         const toolName = this.name;
-        console.info(`[MCP Tool - ${toolName}] Executing...`);
+        logger.info(`[MCP Tool - ${toolName}] Executing...`); // 使用 logger
 
         try {
             const pluginResponse: PluginResponse = await sendRequestToPlugin({ command: Constants.IPC_COMMAND_GET_BREAKPOINTS, payload: {} });
-            console.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse);
+
+            // --- 新增 IPC 响应处理日志 ---
+            const sessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(pluginResponse.payload).substring(0, 100);
+
+            if (sessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${pluginResponse.requestId}, status: ${pluginResponse.status}. Preparing SSE send to sessionId: ${sessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                // 如果没有 sessionId，记录警告。这可能表示请求不是通过标准 SSE 流程触发，或者 context 未正确传递。
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${pluginResponse.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse); // 使用 logger
 
             if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload) {
                  // 尝试使用 Zod 解析整个 payload
-                 try {
+                try {
                     // We expect payload to match { timestamp: string, breakpoints: array }
                     const validatedPayload = z.object({
                         timestamp: z.string().datetime(),
                         breakpoints: z.array(BreakpointInfoSchema) // Validate the array items
                     }).parse(pluginResponse.payload);
 
-                    console.info(`[MCP Tool - ${toolName}] Successfully retrieved ${validatedPayload.breakpoints.length} breakpoints.`);
+                    logger.info(`[MCP Tool - ${toolName}] Successfully retrieved ${validatedPayload.breakpoints.length} breakpoints.`); // 使用 logger
                     return {
                         status: Constants.IPC_STATUS_SUCCESS,
                         timestamp: validatedPayload.timestamp,
@@ -68,22 +82,22 @@ export const getBreakpointsTool = {
                     };
                  } catch (validationError: any) {
                     const errorMessage = `插件返回的数据格式无效: ${validationError.message}`;
-                    console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload);
+                    logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                     return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
                  }
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
                 const errorMessage = pluginResponse.error?.message || '插件获取断点列表失败，未指定错误。';
-                console.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`);
+                logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             } else {
                 const errorMessage = '插件返回成功但响应负载格式意外或缺失。';
-                console.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload);
+                logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
 
         } catch (error: any) {
             const errorMessage = error?.message || "获取断点列表时发生通信错误或意外问题。";
-            console.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error);
+            logger.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: `与 VS Code 扩展通信时出错: ${errorMessage}` };
         }
     }

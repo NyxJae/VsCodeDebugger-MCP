@@ -1,8 +1,7 @@
 import { z } from 'zod';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
 import * as Constants from '../../constants';
-import { IPC_STATUS_SUCCESS, IPC_STATUS_ERROR } from '../../constants'; // Keep specific imports if needed
-// import { StopDebuggingPayload } from '../../types'; // Type not directly used in the old handler, maybe not needed
+import { logger } from '../../config'; // 导入 logger
 
 // Input Schema (Keep as is)
 export const stopDebuggingSchema = z.object({
@@ -20,45 +19,57 @@ const StopDebuggingOutputSchema = z.object({
 
 // --- 新增：定义工具对象 ---
 export const stopDebuggingTool = {
-    name: Constants.TOOL_STOP_DEBUGGING,
+    name: Constants.TOOL_STOP_DEBUGGING, // Use correct constant
     description: "停止指定的或当前活动的调试会话。",
     inputSchema: stopDebuggingSchema,
     outputSchema: StopDebuggingOutputSchema,
 
     async execute(
         args: StopDebuggingArgs,
-        // extra: any
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
     ): Promise<z.infer<typeof StopDebuggingOutputSchema>> {
         const toolName = this.name;
-        console.info(`[MCP Tool - ${toolName}] Executing with args:`, args);
+        logger.info(`[MCP Tool - ${toolName}] Executing with args:`, args); // 使用 logger
 
         try {
+            logger.debug(`[MCP Tool - ${toolName}] Sending request to plugin:`, { sessionId: args.sessionId }); // Log payload being sent
             const response: PluginResponse = await sendRequestToPlugin({
                  command: Constants.IPC_COMMAND_STOP_DEBUGGING,
                  payload: { sessionId: args.sessionId } // Pass args directly
             });
-            console.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response);
 
-            if (response.status === IPC_STATUS_SUCCESS) {
+            // --- 新增 IPC 响应处理日志 ---
+            const transportSessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(response.payload).substring(0, 100);
+
+            if (transportSessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${response.requestId}, status: ${response.status}. Preparing SSE send to sessionId: ${transportSessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response); // 使用 logger
+
+            if (response.status === Constants.IPC_STATUS_SUCCESS) { // Use Constants.*
                 const successMessage = response.payload?.message || '已成功发送停止调试会话的请求。';
-                console.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`);
+                logger.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`); // 使用 logger
                 // Return success status based on schema
                 return { status: Constants.IPC_STATUS_SUCCESS, message: successMessage };
-            } else {
-                const errorMessage = response.error?.message || '停止调试时插件端返回未知错误。';
-                console.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`);
+            } else { // Handles IPC_STATUS_ERROR or any other non-success status from plugin
+                const errorMessage = response.error?.message || '停止调试时插件端返回未知错误或非成功状态。';
+                logger.error(`[MCP Tool - ${toolName}] Plugin reported error or non-success status: ${errorMessage}`); // 使用 logger
                 // Return error status based on schema
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
-        } catch (error: any) {
+        } catch (error: any) { // Catch communication errors or errors in sendRequestToPlugin
             const commErrorMessage = error?.message || '与插件通信失败或发生未知错误。';
-            console.error(`[MCP Tool - ${toolName}] Communication error:`, error);
+            logger.error(`[MCP Tool - ${toolName}] Communication error:`, error); // 使用 logger
             // Return error status based on schema
             return { status: Constants.IPC_STATUS_ERROR, message: `与插件通信失败: ${commErrorMessage}` };
         }
     }
 };
-
 
 // --- 保留旧函数以防万一 ---
 /*

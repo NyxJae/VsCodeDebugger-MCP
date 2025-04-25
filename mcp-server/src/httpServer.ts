@@ -26,8 +26,19 @@ export function startHttpServer(listenPort: number) {
 
         // 当 SSE 连接关闭时，清理 transport
         res.on("close", () => {
-            logger.info(`[HTTP Server] SSE connection closed for sessionId: ${transport.sessionId}`);
+            // 确认关闭事件
+            logger.info(`[HTTP Server] SSE connection close event received for sessionId: ${transport.sessionId}. Cleaning up transport.`);
             delete transports[transport.sessionId];
+            // 确认 transport 已移除
+            logger.info(`[HTTP Server] Transport removed for closed sessionId: ${transport.sessionId}`);
+        });
+
+        // 添加 error 事件监听器
+        res.on("error", (err) => {
+            logger.error(`[HTTP Server] SSE connection error for sessionId: ${transport.sessionId}`, err);
+            // 考虑是否也需要在这里清理 transport
+            delete transports[transport.sessionId];
+            logger.info(`[HTTP Server] Transport removed due to error for sessionId: ${transport.sessionId}`);
         });
 
         // 将 transport 连接到 McpServer

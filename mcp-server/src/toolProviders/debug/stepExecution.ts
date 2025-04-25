@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { StepExecutionParams, StepExecutionResult } from '../../types';
 import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator';
-import { TOOL_NAME_STEP_EXECUTION, IPC_COMMAND_STEP_EXECUTION } from '../../constants';
+import * as Constants from '../../constants'; // Import all constants
+import { logger } from '../../config'; // 导入 logger
 
 const StepExecutionParamsSchema = z.object({
     session_id: z.string().optional().describe("目标调试会话的 ID。如果省略，将尝试使用当前活动的调试会话。"),
@@ -17,34 +18,52 @@ const AsyncDebugResultSchema = z.object({
 
 
 export const stepExecutionTool = {
-    name: TOOL_NAME_STEP_EXECUTION,
+    name: Constants.TOOL_NAME_STEP_EXECUTION, // Correct constant name
     description: '当调试器暂停时，执行一次单步操作 (步过, 步入, 步出)。如果省略 session_id，将尝试使用活动会话。',
     inputSchema: StepExecutionParamsSchema,
     outputSchema: AsyncDebugResultSchema,
 
-    async execute(params: StepExecutionParams): Promise<z.infer<typeof AsyncDebugResultSchema>> {
+    async execute(
+        params: StepExecutionParams,
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
+    ): Promise<z.infer<typeof AsyncDebugResultSchema>> {
+        const toolName = this.name;
+        logger.info(`[MCP Tool - ${toolName}] Executing with params:`, params); // 使用 logger
         try {
 
             let sessionId = params.session_id;
             const threadId = params.thread_id;
             const stepType = params.step_type;
 
+            logger.debug(`[MCP Tool - ${toolName}] Sending request to plugin for session ${sessionId || 'default (active)'}, thread ${threadId}, step: ${stepType}`); // 使用 logger
 
             const response: PluginResponse<StepExecutionResult> = await sendRequestToPlugin(
                 {
-                    command: IPC_COMMAND_STEP_EXECUTION,
+                    command: Constants.IPC_COMMAND_STEP_EXECUTION, // Use constant
                     payload: {
                         sessionId: sessionId,
                         thread_id: threadId,
                         step_type: stepType,
                     }
                 },
-                65000
+                65000 // Timeout
             );
 
+            // --- 新增 IPC 响应处理日志 ---
+            const transportSessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(response.payload).substring(0, 100);
 
-            if (response.status === 'success' && response.payload) {
-                const result = response.payload;
+            if (transportSessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${response.requestId}, status: ${response.status}. Preparing SSE send to sessionId: ${transportSessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response); // 使用 logger
+
+            if (response.status === Constants.IPC_STATUS_SUCCESS && response.payload) { // Use constant
+                const result = response.payload; // Define result here
                 if (result.status === 'stopped') {
                     return {
                         status: 'stopped',
@@ -71,19 +90,24 @@ export const stepExecutionTool = {
                         message: result.message || '插件返回错误状态但无消息',
                     };
                 }
-                 return { status: 'error', message: `处理插件响应时遇到意外的内部状态: ${(result as any).status}` };
-            } else {
+                 // 如果 payload.status 不是预期的值，记录错误并返回 error 状态
+                 const unexpectedStatusMsg = `处理插件响应时遇到意外的内部状态: ${(result as any).status}`;
+                 logger.error(`[MCP Tool - ${toolName}] ${unexpectedStatusMsg}`, result);
+                 return { status: 'error', message: unexpectedStatusMsg };
+            } else { // This else corresponds to the outer if (response.status === ...)
                  const errorMessage = response.error?.message || '插件通信失败或返回无效响应';
+                 logger.error(`[MCP Tool - ${toolName}] Plugin communication error: ${errorMessage}`); // 使用 logger
                  return {
                      status: 'error',
                      message: errorMessage,
                  };
             }
-        } catch (error: any) {
+        } catch (error: any) { // Catch block for the outer try
+            logger.error(`[MCP Tool - ${toolName}] Error executing step_execution:`, error); // 使用 logger
             const status = error.message?.includes('timed out') ? 'timeout' : 'error';
             return {
                 status: status,
-                message: `执行 ${TOOL_NAME_STEP_EXECUTION} 工具时出错: ${error.message || error}`,
+                message: `执行 ${toolName} 工具时出错: ${error.message || error}`,
             };
         }
     },

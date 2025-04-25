@@ -259,6 +259,28 @@ export class DebugSessionManager {
               targetConfig = { ...targetConfig, noDebug: true };
             }
 
+            // --- 处理 ${file} 变量 ---
+            if (typeof targetConfig.program === 'string' && targetConfig.program.includes('${file}')) {
+                const activeEditor = vscode.window.activeTextEditor;
+                if (activeEditor) {
+                    const currentFilePath = activeEditor.document.uri.fsPath;
+                    console.log(`[DebugSessionManager] Resolving \${file} in '${configurationName}' to: ${currentFilePath}`);
+                    // 确保替换时路径分隔符正确 (VS Code API 返回的 fsPath 通常是平台相关的正确路径)
+                    targetConfig.program = targetConfig.program.replace('${file}', currentFilePath);
+                } else {
+                    // 没有活动编辑器，无法解析 ${file}
+                    console.error(`[DebugSessionManager] Cannot resolve \${file} for config '${configurationName}': No active text editor.`);
+                    // 直接返回错误，不调用 startDebugging
+                    // 注意：这里的 resolveRequest 是 DebugSessionManager 内部方法，用于结束 Promise
+                    this.resolveRequest(requestId, {
+                        status: IPC_STATUS_ERROR, // 使用常量
+                        message: `无法启动调试配置 '${configurationName}'：需要激活一个编辑器以解析 \${file} 变量。`
+                    });
+                    return; // 提前返回，不继续执行 startDebugging
+                }
+            }
+            // --- ${file} 处理结束 ---
+
             const listeners: vscode.Disposable[] = [];
 
             const timeout = 60000; // 超时时间

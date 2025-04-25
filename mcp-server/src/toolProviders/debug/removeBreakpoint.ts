@@ -1,7 +1,7 @@
 import { z } from 'zod';
-import { sendRequestToPlugin } from '../../pluginCommunicator';
+import { sendRequestToPlugin, PluginResponse } from '../../pluginCommunicator'; // Import PluginResponse type
 import * as Constants from '../../constants';
-import type { PluginResponse as LocalPluginResponse } from '../../types'; // Keep type import
+import { logger } from '../../config'; // 导入 logger
 
 // --- Input Schema Definitions (Keep as is) ---
 const LocationSchema = z.object({
@@ -43,38 +43,51 @@ export const removeBreakpointTool = {
     description: "移除一个或所有断点。可以通过断点 ID、位置或设置 clear_all=true 来指定。",
     inputSchema: RemoveBreakpointInputSchema, // Use the refined schema for input validation
     outputSchema: RemoveBreakpointOutputSchema,
-    baseinputSchema: BaseRemoveBreakpointInputSchema,
+    baseinputSchema: BaseRemoveBreakpointInputSchema, // Keep base schema if needed elsewhere
 
     async execute(
         args: RemoveBreakpointInput, // Expect validated args based on inputSchema
-        // extra: any
+        context?: { transport?: { sessionId: string } } // 添加 context 参数以获取 sessionId
     ): Promise<z.infer<typeof RemoveBreakpointOutputSchema>> {
         const toolName = this.name;
         // Input validation is implicitly handled by the MCP server framework using inputSchema
         // If called directly, validation should happen before calling execute.
         // We assume 'args' here conforms to RemoveBreakpointInputSchema.
-        console.info(`[MCP Tool - ${toolName}] Executing with validated args:`, args);
+        logger.info(`[MCP Tool - ${toolName}] Executing with validated args:`, args); // 使用 logger
 
         try {
-            const response: LocalPluginResponse = await sendRequestToPlugin({
+            // Use PluginResponse from communicator
+            const response: PluginResponse = await sendRequestToPlugin({
                 command: Constants.IPC_COMMAND_REMOVE_BREAKPOINT,
                 payload: args, // Send the validated parameters
             });
-            console.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response);
+
+            // --- 新增 IPC 响应处理日志 ---
+            const sessionId = context?.transport?.sessionId;
+            const payloadSnippet = JSON.stringify(response.payload).substring(0, 100);
+
+            if (sessionId) {
+                logger.debug(`[MCP Server - ${toolName}] Received IPC response for requestId ${response.requestId}, status: ${response.status}. Preparing SSE send to sessionId: ${sessionId}. Payload snippet: ${payloadSnippet}...`);
+            } else {
+                logger.warn(`[MCP Server - ${toolName}] No active transport or sessionId found in context for requestId ${response.requestId} after receiving IPC response. Cannot confirm target SSE session.`);
+            }
+            // --- 日志结束 ---
+
+            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response); // 使用 logger
 
             if (response.status === Constants.IPC_STATUS_SUCCESS) {
                 const successMessage = typeof response.payload?.message === 'string' ? response.payload.message : '断点移除操作已成功请求。';
-                console.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`);
+                logger.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_SUCCESS, message: successMessage };
             } else {
                 const errorMessage = response.error?.message || '插件移除断点时返回未知错误。';
-                console.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`);
+                logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
         } catch (error: any) {
             const commErrorMessage = error?.message || '与插件通信失败或发生未知错误。';
             const fullCommMessage = `移除断点时发生通信错误: ${commErrorMessage}`;
-            console.error(`[MCP Tool - ${toolName}] Communication error:`, error);
+            logger.error(`[MCP Tool - ${toolName}] Communication error:`, error); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: fullCommMessage };
         }
     }

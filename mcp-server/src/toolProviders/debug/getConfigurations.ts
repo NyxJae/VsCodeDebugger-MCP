@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { z } from 'zod';
 import * as Constants from '../../constants';
+import { logger } from '../../config'; // 导入 logger
 
 // 定义 launch.json 配置项结构
 interface LaunchConfiguration {
@@ -42,11 +43,12 @@ export const getDebuggerConfigurationsTool = {
         args: z.infer<typeof GetDebuggerConfigurationsInputSchema>,
         // extra: any // 如果需要 extra 参数可以取消注释
     ): Promise<z.infer<typeof GetDebuggerConfigurationsOutputSchema>> {
+        const toolName = this.name; // 获取工具名称以便日志记录
         const workspacePath = process.env.VSCODE_WORKSPACE_PATH;
 
         if (!workspacePath) {
             const errorMsg = '无法获取 VS Code 工作区路径，请确保插件已正确设置 VSCODE_WORKSPACE_PATH 环境变量。';
-            console.error(`[MCP Tool - ${this.name}] Error: ${errorMsg}`);
+            logger.error(`[MCP Tool - ${toolName}] Error: ${errorMsg}`); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
         }
 
@@ -72,21 +74,21 @@ export const getDebuggerConfigurationsTool = {
                     // 直接返回对象数组，而不是序列化后的字符串
                     const resultConfigurations = validConfigurations.map(config => ({ ...config }));
 
-                    console.info(`[MCP Tool - ${this.name}] Successfully read ${resultConfigurations.length} configurations.`);
+                    logger.info(`[MCP Tool - ${toolName}] Successfully read ${resultConfigurations.length} configurations.`); // 使用 logger
                     return { status: Constants.IPC_STATUS_SUCCESS, configurations: resultConfigurations };
                 } else {
                     const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
-                    console.error(`[MCP Tool - ${this.name}] Error: ${errorMsg}`);
+                    logger.error(`[MCP Tool - ${toolName}] Error: ${errorMsg}`); // 使用 logger
                     return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
                 }
             } catch (parseError) {
                 let errorMsg: string;
                 if (parseError instanceof SyntaxError) {
                     errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
-                    console.error(`[MCP Tool - ${this.name}] Error parsing launch.json: ${errorMsg}`);
+                    logger.error(`[MCP Tool - ${toolName}] Error parsing launch.json: ${errorMsg}`); // 使用 logger
                 } else {
                     errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
-                    console.error(`[MCP Tool - ${this.name}] ${errorMsg}`);
+                    logger.error(`[MCP Tool - ${toolName}] ${errorMsg}`); // 使用 logger
                 }
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
             }
@@ -94,10 +96,10 @@ export const getDebuggerConfigurationsTool = {
             let errorMsg: string;
             if (readError.code === 'ENOENT') {
                 errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
-                console.warn(`[MCP Tool - ${this.name}] ${errorMsg}`);
+                logger.warn(`[MCP Tool - ${toolName}] ${errorMsg}`); // 使用 logger
             } else {
                 errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
-                console.error(`[MCP Tool - ${this.name}] Error reading launch.json: ${errorMsg}`);
+                logger.error(`[MCP Tool - ${toolName}] Error reading launch.json: ${errorMsg}`); // 使用 logger
             }
             return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
         }
