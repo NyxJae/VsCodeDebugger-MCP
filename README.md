@@ -38,7 +38,12 @@
 
 ## 🐞 已知问题/潜在问题
 
-*   只在 RooCode 这一种做过简单测试,尚不清楚在其他客户端工作情况
+*   只在 RooCode 这一个客户端做过简单测试,尚不清楚在其他客户端工作情况
+
+### 日志与报错信息
+如果发现错误,可在VsCode的输出中查看日志,方便反馈提issues.
+*   MCP服务器日志:![](https://files.catbox.moe/19t08t.png)
+*   插件与模拟客户端日志:![jtnqbb.png](https://files.catbox.moe/jtnqbb.png)
 
 ## 🔮 未来开发计划
 
@@ -49,9 +54,10 @@
     *   实现 `evaluate_expression` 工具：在指定的堆栈帧上下文中计算表达式。
 *   **国际化**
 *   *   工具提示词转为英文
+*   *   README图片和使用指南英文版
 ## 🎉 发布说明
 
-### 0.4.0
+### 1.0.0
 *   实现 `stop_debugging` 工具。
 *   实现 `step_execution` 工具 (Step Over, Step Into, Step Out)。
 *   实现 `continue_debugging` 工具。
@@ -64,6 +70,7 @@
 *   增加端口冲突处理和手动指定端口功能。
 *   增加自动启动 MCP 服务器的配置选项。
 *   提供一键复制客户端配置的功能。
+*   模拟客户端接收原始SSE返回信息
 
 ### 0.1.0
 *   初始版本。
@@ -72,6 +79,7 @@
 *   实现简单的 MCP 服务器启停控制（通过状态栏）。
 
 ---
+
 
 ## 感谢以下优秀开源项目
 [RooCode](https://github.com/RooVetGit/Roo-Code)
