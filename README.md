@@ -2,6 +2,8 @@
 
 [![English](https://img.shields.io/badge/Language-English-blue)](README.en.md)
 
+![1745575964086-PixPin_2025-04-25_17-55-43](https://github.com/user-attachments/assets/ac4cc09f-017e-4266-b617-69398dcadf52)
+
 这是一个 VS Code 扩展，旨在通过 Model Context Protocol (MCP) 服务器，使 AI 代理能够与 VS Code 的调试功能进行交互，从而实现自动化和智能化的调试体验。使用[RooCode](https://github.com/RooVetGit/Roo-Code)辅助开发
 
 ## ✨ 特性
