@@ -476,5 +476,5 @@ vscode 插件部分不需要 webview
 - 开发 step_execution 工具
 - continue_debugging 工具 必需要 session_id 而 step_execution 不需要 session_id,不统一,那优化下,让 step_execution 工具和  continue_debugging 工具 都接受session_id 但是可选项,不传递默认获取当前的会话.以后需要session_id 的 工具 也相同办法处理
 - stop_debugging 工具开发
-### 当前任务
 - 让插件一运行 就自动开启mcp服务器
+### 当前任务
