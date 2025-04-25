@@ -31,6 +31,12 @@
 *   **如何安装 Node.js**: 请访问 [Node.js 官方网站](https://nodejs.org/) 下载并安装适合您操作系统的版本。
 *   **AI客户端** 支持 Model Context Protocol 的 AI 代理客户端。
 
+## 📖 使用指南
+以RooCode为例
+1. 在VsCode插件市场中搜索安装插件
+2. 确认MCP服务器已开启
+3. 复制配置到RooCodeMCP配置文件中
+4. 每次使用前,检查RooCode是否和MCP服务器连接.
 ## 🔧 扩展设置
 
 本扩展提供以下 VS Code 设置项 (`settings.json`):
