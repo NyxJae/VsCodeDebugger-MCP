@@ -7,6 +7,7 @@ import { IpcHandler } from './managers/ipcHandler';
 import { DebuggerApiWrapper } from './vscode/debuggerApiWrapper';
 import { PluginRequest, PluginResponse, ContinueDebuggingParams, StepExecutionParams, StepExecutionResult, StopDebuggingPayload } from './types';
 import * as Constants from './constants';
+import { SseClientManager } from './managers/sseClientManager'; // 导入 SSE 客户端管理器
 
 /**
  * 协调 MCP 服务器的启动、停止、状态管理和与 VS Code 的交互。
@@ -15,6 +16,7 @@ import * as Constants from './constants';
 export class McpServerManager implements vscode.Disposable {
     private readonly outputChannel: vscode.OutputChannel;
     private disposables: vscode.Disposable[] = [];
+    private sseClientManager: SseClientManager; // 添加 SSE 客户端管理器实例
 
     /**
      * 创建一个新的 McpServerManager 实例。
@@ -33,6 +35,10 @@ export class McpServerManager implements vscode.Disposable {
     ) {
         this.outputChannel = vscode.window.createOutputChannel(Constants.OUTPUT_CHANNEL_COORDINATOR);
         this.disposables.push(this.outputChannel);
+
+        // 实例化 SseClientManager
+        this.sseClientManager = new SseClientManager(this.outputChannel);
+        this.disposables.push(this.sseClientManager); // 添加到 disposables
 
         // 将 DebuggerApiWrapper 注入 IpcHandler
         this.ipcHandler.setDebuggerApiWrapper(this.debuggerApiWrapper);
@@ -57,6 +63,15 @@ export class McpServerManager implements vscode.Disposable {
                     break;
             }
             this.statusBarManager.setStatus(mcpStatus, port);
+
+            // 根据状态管理 SSE 客户端连接 <--- 新增逻辑
+            if (status === 'running' && port !== null) {
+                this.outputChannel.appendLine(`[Coordinator] Server is running on port ${port}. Starting SSE listener.`);
+                this.sseClientManager.startListening(port);
+            } else if (status === 'stopped' || status === 'error') {
+                this.outputChannel.appendLine(`[Coordinator] Server stopped or encountered an error. Stopping SSE listener.`);
+                this.sseClientManager.stopListening();
+            }
         });
         this.processManager.on('message', (message: any) => {
             this.outputChannel.appendLine(`[Coordinator] Forwarding message from process to IpcHandler: ${JSON.stringify(message)}`);
@@ -89,6 +104,7 @@ export class McpServerManager implements vscode.Disposable {
             this.outputChannel.appendLine(`[Coordinator] Received error event from ProcessManager: ${err.message}`);
             vscode.window.showErrorMessage(`MCP 服务器进程错误: ${err.message}`);
             // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新为 'error'
+            this.sseClientManager.stopListening(); // 服务器进程出错，停止 SSE 监听
         });
 
         this.processManager.on('close', (code: number | null, signal: NodeJS.Signals | null, unexpected: boolean) => {
@@ -99,6 +115,7 @@ export class McpServerManager implements vscode.Disposable {
             }
             // IpcHandler 不再直接持有进程引用，无需清理
             // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新
+            this.sseClientManager.stopListening(); // 服务器进程关闭，停止 SSE 监听
         });
 
         this.disposables.push(
