@@ -2,7 +2,7 @@
   "name": "vscode-debugger-mcp",
   "displayName": "VsCode-Debugger-MCP",
   "description": "A VS Code debugger extension that interacts with an MCP server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "publisher": "NyxJae",
   "repository": {
     "type": "git",
