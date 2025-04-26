@@ -66,7 +66,7 @@ export function activate(context: vscode.ExtensionContext) {
 			// 检查 error 是否有 message 属性
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			outputChannel.appendLine(`[Extension] Error during auto-start: ${errorMessage}`);
-			vscode.window.showErrorMessage(`自动启动 MCP 服务器失败: ${errorMessage}`);
+			vscode.window.showErrorMessage(`Failed to auto-start MCP server: ${errorMessage}`);
 		});
 	}
 	// --- 自动启动逻辑结束 ---
@@ -107,21 +107,21 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 
 	// 添加 "更改端口" 选项
 	const changePortItem: vscode.QuickPickItem & { action: () => Promise<void> } = {
-		label: '$(gear) 更改服务器端口',
-		description: `当前配置端口: ${getStoredPort(context)}`,
+		label: '$(gear) Change Server Port',
+		description: `Current configured port: ${getStoredPort(context)}`,
 		action: async () => {
 			const currentPort = getStoredPort(context);
 			const newPortStr = await vscode.window.showInputBox({
-				prompt: `请输入新的 MCP 服务器端口号 (1025-65535)`,
-				placeHolder: `当前: ${currentPort}`,
+				prompt: `Please enter the new MCP server port number (1025-65535)`,
+				placeHolder: `Current: ${currentPort}`,
 				value: currentPort.toString(),
 				validateInput: (value) => {
-					if (!value) {return '端口号不能为空。';}
+					if (!value) {return 'Port number cannot be empty.';}
 					if (!isValidPort(value)) {
-						return '请输入 1025 到 65535 之间的有效端口号。';
+						return 'Please enter a valid port number between 1025 and 65535.';
 					}
 					if (parseInt(value, 10) === currentPort) {
-						return '新端口不能与当前端口相同。';
+						return 'New port cannot be the same as the current port.';
 					}
 					return null;
 				}
@@ -130,11 +130,11 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 			if (newPortStr) {
 				const newPort = parseInt(newPortStr, 10);
 				await storePort(context, newPort);
-				vscode.window.showInformationMessage(`MCP 服务器端口已更新为 ${newPort}。更改将在下次服务器启动时生效。`);
+				vscode.window.showInformationMessage(`MCP server port updated to ${newPort}. Changes will take effect on the next server start.`);
 				// 如果服务器正在运行，可以提示用户重启
 				if (serverManager.isRunning()) { // 使用 McpServerManager 的 isRunning 方法
-					 vscode.window.showInformationMessage('请重启 MCP 服务器以应用新的端口设置。', '立即重启').then(selection => {
-						 if (selection === '立即重启') {
+					 vscode.window.showInformationMessage('Please restart the MCP server to apply the new port setting.', 'Restart Now').then(selection => {
+						 if (selection === 'Restart Now') {
 							 serverManager.restartServer(); // 使用 McpServerManager 的 restartServer 方法
 						 }
 					 });
@@ -147,12 +147,12 @@ async function showServerActionMenu(context: vscode.ExtensionContext, manager: S
 
 	// --- 添加切换自动启动选项 ---
 	const toggleAutoStartItem: ActionQuickPickItem = {
-		label: isAutoStartEnabled ? "$(check) 已开启自动启动" : "$(circle-slash) 已禁用自动启动",
-		description: isAutoStartEnabled ? "点击切换到插件启动时不再自动开启服务器" : "点击切换到插件启动时自动开启服务器",
+		label: isAutoStartEnabled ? "$(check) Auto-start Enabled" : "$(circle-slash) Auto-start Disabled",
+		description: isAutoStartEnabled ? "Click to disable auto-start on extension activation" : "Click to enable auto-start on extension activation",
 		action: async () => {
 			const newState = !isAutoStartEnabled;
 			await storeAutoStartConfig(context, newState);
-			vscode.window.showInformationMessage(`MCP 服务器自动启动已${newState ? '启用' : '禁用'}。`);
+			vscode.window.showInformationMessage(`MCP server auto-start ${newState ? 'enabled' : 'disabled'}.`);
 			// 重新显示菜单以更新状态 (可选，但体验更好)
 			// 注意：直接调用 showServerActionMenu 可能导致无限循环，更好的方式是通知状态栏更新或让用户手动重新打开
 			// 暂时不自动重新打开菜单

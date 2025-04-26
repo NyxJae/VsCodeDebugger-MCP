@@ -20,7 +20,7 @@ interface LaunchJson {
 }
 
 // --- 新增：定义工具的输入 Schema ---
-const GetDebuggerConfigurationsInputSchema = z.object({}).describe("获取调试配置，无需输入参数");
+const GetDebuggerConfigurationsInputSchema = z.object({}).describe("Retrieves debug configurations, requires no input parameters.");
 
 // --- 新增：定义工具执行结果的 Schema ---
 const GetDebuggerConfigurationsOutputSchema = z.object({
@@ -29,14 +29,14 @@ const GetDebuggerConfigurationsOutputSchema = z.object({
         name: z.string(),
         type: z.string(),
         request: z.string(),
-    }).passthrough()).optional().describe("成功时返回的调试配置列表"),
-    message: z.string().optional().describe("失败时返回的错误信息"),
-}).describe("获取调试配置工具的执行结果");
+    }).passthrough()).optional().describe("List of debug configurations returned on success"),
+    message: z.string().optional().describe("Error message returned on failure"),
+}).describe("Execution result of the get debug configurations tool");
 
 // --- 新增：定义工具对象 ---
 export const getDebuggerConfigurationsTool = {
     name: Constants.TOOL_GET_DEBUGGER_CONFIGURATIONS,
-    description: "读取 VS Code 工作区的 .vscode/launch.json 文件并返回其调试配置列表。开始调试前务必使用此工具获取调试配置",
+    description: "Reads the .vscode/launch.json file in the VS Code workspace and returns its debug configuration list. It is essential to use this tool to get debug configurations before starting debugging.",
     inputSchema: GetDebuggerConfigurationsInputSchema,
     outputSchema: GetDebuggerConfigurationsOutputSchema,
 
@@ -79,17 +79,17 @@ export const getDebuggerConfigurationsTool = {
                     logger.info(`[MCP Tool - ${toolName}] Successfully read ${resultConfigurations.length} configurations.`); // 使用 logger
                     return { status: Constants.IPC_STATUS_SUCCESS, configurations: resultConfigurations };
                 } else {
-                    const errorMsg = 'launch.json 文件格式错误：缺少有效的 "configurations" 数组或结构不正确。';
+                    const errorMsg = 'launch.json file format error: missing a valid "configurations" array or incorrect structure.';
                     logger.error(`[MCP Tool - ${toolName}] Error: ${errorMsg}`); // 使用 logger
                     return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
                 }
             } catch (parseError) {
                 let errorMsg: string;
                 if (parseError instanceof SyntaxError) {
-                    errorMsg = `launch.json 文件格式错误: ${parseError.message}`;
+                    errorMsg = `launch.json file format error: ${parseError.message}`;
                     logger.error(`[MCP Tool - ${toolName}] Error parsing launch.json: ${errorMsg}`); // 使用 logger
                 } else {
-                    errorMsg = `解析 launch.json 时发生意外错误: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
+                    errorMsg = `An unexpected error occurred while parsing launch.json: ${parseError instanceof Error ? parseError.message : String(parseError)}`;
                     logger.error(`[MCP Tool - ${toolName}] ${errorMsg}`); // 使用 logger
                 }
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
@@ -97,10 +97,10 @@ export const getDebuggerConfigurationsTool = {
         } catch (readError: any) {
             let errorMsg: string;
             if (readError.code === 'ENOENT') {
-                errorMsg = `无法在 ${workspacePath}${path.sep}.vscode${path.sep} 目录下找到 launch.json 文件。`;
+                errorMsg = `Could not find launch.json file in the ${workspacePath}${path.sep}.vscode${path.sep} directory.`;
                 logger.warn(`[MCP Tool - ${toolName}] ${errorMsg}`); // 使用 logger
             } else {
-                errorMsg = `读取 launch.json 文件时出错: ${readError.message}`;
+                errorMsg = `Error reading launch.json file: ${readError.message}`;
                 logger.error(`[MCP Tool - ${toolName}] Error reading launch.json: ${errorMsg}`); // 使用 logger
             }
             return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };

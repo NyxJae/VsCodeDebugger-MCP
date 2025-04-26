@@ -7,39 +7,39 @@ import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.j
 
 // 输入 Schema (保持不变)
 export const setBreakpointSchema = z.object({
-    file_path: z.string().min(1, "File path cannot be empty.").describe("要设置断点的文件路径（可以是相对路径或绝对路径）"),
-    line_number: z.number().int().positive("Line number must be a positive integer.").describe("要设置断点的行号（从 1 开始）"),
-    column_number: z.number().int().positive("Column number must be a positive integer.").optional().describe("要设置断点的列号（从 1 开始）"),
-    condition: z.string().optional().describe("断点触发的条件表达式"),
-    hit_condition: z.string().optional().describe("断点触发的命中次数条件"),
-    log_message: z.string().optional().describe("断点触发时要记录的消息（日志断点）"),
+    file_path: z.string().min(1, "File path cannot be empty.").describe("The path to the file where the breakpoint should be set (can be relative or absolute)"),
+    line_number: z.number().int().positive("Line number must be a positive integer.").describe("The 1-based line number where the breakpoint should be set"),
+    column_number: z.number().int().positive("Column number must be a positive integer.").optional().describe("The 1-based column number where the breakpoint should be set"),
+    condition: z.string().optional().describe("An expression that must evaluate to true for the breakpoint to be hit"),
+    hit_condition: z.string().optional().describe("The hit count condition for the breakpoint to be hit"),
+    log_message: z.string().optional().describe("A message to be logged when the breakpoint is hit (logpoint)"),
 });
 
 export type SetBreakpointArgs = z.infer<typeof setBreakpointSchema>;
 
 // --- 新增：定义工具执行结果的 Schema ---
 const BreakpointInfoSchema = z.object({
-    id: z.string().optional().describe("断点的唯一标识符 (由调试适配器分配)"), // ID 可能在插件响应中不存在，设为 optional
-    verified: z.boolean().describe("断点是否已被调试器验证并成功设置"),
+    id: z.string().optional().describe("The unique identifier of the breakpoint (assigned by the debug adapter)"), // ID might not be present in plugin response, set to optional
+    verified: z.boolean().describe("Whether the breakpoint has been verified and successfully set by the debugger"),
     source: z.object({
-        path: z.string().describe("断点所在文件的绝对路径")
-    }).describe("断点源文件信息"),
-    line: z.number().int().positive().describe("断点实际设置的行号"),
-    column: z.number().int().positive().optional().describe("断点实际设置的列号"),
-    message: z.string().optional().describe("与断点相关的消息（例如，未验证的原因）"),
-    timestamp: z.string().datetime().describe("断点设置或更新的时间戳 (ISO 8601)") // 假设插件返回 ISO 格式
-}).describe("成功设置的断点信息");
+        path: z.string().describe("The absolute path of the file where the breakpoint is located")
+    }).describe("Source file information for the breakpoint"),
+    line: z.number().int().positive().describe("The actual line number where the breakpoint was set"),
+    column: z.number().int().positive().optional().describe("The actual column number where the breakpoint was set"),
+    message: z.string().optional().describe("A message related to the breakpoint (e.g., reason for not being verified)"),
+    timestamp: z.string().datetime().describe("Timestamp when the breakpoint was set or updated (ISO 8601)") // Assuming plugin returns ISO format
+}).describe("Information about the successfully set breakpoint");
 
 const SetBreakpointOutputSchema = z.object({
     status: z.enum([Constants.IPC_STATUS_SUCCESS, Constants.IPC_STATUS_ERROR]),
-    breakpoint: BreakpointInfoSchema.optional().describe("成功时返回的断点信息"),
-    message: z.string().optional().describe("失败时返回的错误信息"),
-}).describe("设置断点工具的执行结果");
+    breakpoint: BreakpointInfoSchema.optional().describe("Breakpoint information returned on success"),
+    message: z.string().optional().describe("Error message returned on failure"),
+}).describe("Execution result of the set breakpoint tool");
 
 // --- 新增：定义工具对象 ---
 export const setBreakpointTool = {
     name: Constants.TOOL_SET_BREAKPOINT,
-    description: "在指定文件的指定行设置一个断点。",
+    description: "Sets a breakpoint at the specified line in the given file.",
     inputSchema: setBreakpointSchema,
     outputSchema: SetBreakpointOutputSchema,
 
@@ -95,23 +95,23 @@ export const setBreakpointTool = {
                     logger.info(`[MCP Tool - ${toolName}] Breakpoint set successfully:`, validatedBreakpoint); // 使用 logger
                     return { status: Constants.IPC_STATUS_SUCCESS, breakpoint: validatedBreakpoint };
                 } catch (validationError: any) {
-                     const errorMessage = `插件返回的断点数据格式无效: ${validationError.message}`;
+                     const errorMessage = `Invalid breakpoint data format returned by plugin: ${validationError.message}`;
                      logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, resultBreakpoint); // 使用 logger
                      return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
                 }
 
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
-                const errorMessage = pluginResponse.error?.message || '插件设置断点失败，未指定错误。';
+                const errorMessage = pluginResponse.error?.message || 'Plugin failed to set breakpoint, no specific error provided.';
                 logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             } else {
-                const errorMessage = '插件返回成功但响应负载格式意外。';
+                const errorMessage = 'Plugin returned success but response payload format is unexpected.';
                 logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
 
         } catch (error: any) {
-            const errorMessage = error?.message || "设置断点时发生通信错误或意外问题。";
+            const errorMessage = error?.message || "Communication error or unexpected issue occurred while setting breakpoint.";
             logger.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
         }

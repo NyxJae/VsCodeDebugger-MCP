@@ -6,7 +6,7 @@ import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.j
 
 // Input Schema (Keep as is)
 export const stopDebuggingSchema = z.object({
-    sessionId: z.string().optional().describe("要停止的调试会话的 ID。如果省略，将尝试停止当前活动的会话。"),
+    sessionId: z.string().optional().describe("The ID of the debug session to stop. If omitted, the currently active session will be attempted."),
 });
 
 export type StopDebuggingArgs = z.infer<typeof stopDebuggingSchema>;
@@ -14,14 +14,14 @@ export type StopDebuggingArgs = z.infer<typeof stopDebuggingSchema>;
 // --- 新增：定义工具执行结果的 Schema ---
 const StopDebuggingOutputSchema = z.object({
     status: z.enum([Constants.IPC_STATUS_SUCCESS, Constants.IPC_STATUS_ERROR]),
-    message: z.string().optional().describe("操作结果的消息，成功或失败时都可能包含"),
-}).describe("停止调试工具的执行结果");
+    message: z.string().optional().describe("A message describing the result of the operation, may be included on success or failure"),
+}).describe("Execution result of the stop debugging tool");
 
 
 // --- 新增：定义工具对象 ---
 export const stopDebuggingTool = {
     name: Constants.TOOL_STOP_DEBUGGING, // Use correct constant
-    description: "停止指定的或当前活动的调试会话。",
+    description: "Stops the specified or currently active debug session.",
     inputSchema: stopDebuggingSchema,
     outputSchema: StopDebuggingOutputSchema,
 
@@ -54,21 +54,21 @@ export const stopDebuggingTool = {
             logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response); // 使用 logger
 
             if (response.status === Constants.IPC_STATUS_SUCCESS) { // Use Constants.*
-                const successMessage = response.payload?.message || '已成功发送停止调试会话的请求。';
+                const successMessage = response.payload?.message || 'Request to stop debug session successfully sent.';
                 logger.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`); // 使用 logger
                 // Return success status based on schema
                 return { status: Constants.IPC_STATUS_SUCCESS, message: successMessage };
             } else { // Handles IPC_STATUS_ERROR or any other non-success status from plugin
-                const errorMessage = response.error?.message || '停止调试时插件端返回未知错误或非成功状态。';
+                const errorMessage = response.error?.message || 'Plugin returned an unknown error or non-success status while stopping debugging.';
                 logger.error(`[MCP Tool - ${toolName}] Plugin reported error or non-success status: ${errorMessage}`); // 使用 logger
                 // Return error status based on schema
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
         } catch (error: any) { // Catch communication errors or errors in sendRequestToPlugin
-            const commErrorMessage = error?.message || '与插件通信失败或发生未知错误。';
+            const commErrorMessage = error?.message || 'Failed to communicate with plugin or an unknown error occurred.';
             logger.error(`[MCP Tool - ${toolName}] Communication error:`, error); // 使用 logger
             // Return error status based on schema
-            return { status: Constants.IPC_STATUS_ERROR, message: `与插件通信失败: ${commErrorMessage}` };
+            return { status: Constants.IPC_STATUS_ERROR, message: `Failed to communicate with plugin: ${commErrorMessage}` };
         }
     }
 };

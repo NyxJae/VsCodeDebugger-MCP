@@ -42,7 +42,7 @@ export const IPC_STATUS_TIMEOUT = 'timeout';
 export const IPC_STATUS_INTERRUPTED = 'interrupted';
 
 // UI 文本
-export const UI_TEXT_INPUT_NEW_PORT = '输入新端口';
+export const UI_TEXT_INPUT_NEW_PORT = 'Enter new port';
 
 // MCP 客户端配置
 export const MCP_CONFIG_SERVER_KEY = 'vscode-debugger-mcp';

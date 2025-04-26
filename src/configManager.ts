@@ -21,7 +21,7 @@ export async function storePort(context: vscode.ExtensionContext, port: number):
     if (isValidPort(port)) {
         await context.globalState.update(MCP_PORT_KEY, port);
     } else {
-        console.error(`尝试存储无效的端口号: ${port}`);
+        console.error(`Attempted to store invalid port number: ${port}`);
     }
 }
 

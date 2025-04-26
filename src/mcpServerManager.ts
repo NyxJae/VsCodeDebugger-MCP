@@ -90,7 +90,7 @@ export class McpServerManager implements vscode.Disposable {
                                 type: Constants.IPC_MESSAGE_TYPE_RESPONSE,
                                 requestId: message.requestId,
                                 status: Constants.IPC_STATUS_ERROR,
-                                error: { message: `处理请求时发生意外错误: ${error.message}` }
+                                error: { message: `Unexpected error occurred while processing request: ${error.message}` }
                             });
                         }
                     });
@@ -102,8 +102,8 @@ export class McpServerManager implements vscode.Disposable {
 
         this.processManager.on('error', (err: Error) => {
             this.outputChannel.appendLine(`[Coordinator] Received error event from ProcessManager: ${err.message}`);
-            vscode.window.showErrorMessage(`MCP 服务器进程错误: ${err.message}`);
-            // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新为 'error'
+            vscode.window.showErrorMessage(`MCP server process error: ${err.message}`);
+            // StatusBarManager status is updated by ProcessManager's statusChange event to 'error'
             this.sseClientManager.stopListening(); // 服务器进程出错，停止 SSE 监听
         });
 
@@ -111,9 +111,9 @@ export class McpServerManager implements vscode.Disposable {
             this.outputChannel.appendLine(`[Coordinator] Received close event from ProcessManager. Code: ${code}, Signal: ${signal}, Unexpected: ${unexpected}`);
             // 如果是意外关闭，显示错误信息
             if (unexpected) {
-                vscode.window.showErrorMessage(`MCP 服务器进程意外退出 (Code: ${code}, Signal: ${signal})`);
+                vscode.window.showErrorMessage(`MCP server process exited unexpectedly (Code: ${code}, Signal: ${signal})`);
             }
-            // IpcHandler 不再直接持有进程引用，无需清理
+            // IpcHandler no longer directly holds process reference, no cleanup needed
             // StatusBarManager 的状态已由 ProcessManager 的 statusChange 事件更新
             this.sseClientManager.stopListening(); // 服务器进程关闭，停止 SSE 监听
         });
@@ -163,7 +163,7 @@ export class McpServerManager implements vscode.Disposable {
                             sessionIdToUse = activeSession.id;
                             this.outputChannel.appendLine(`[Coordinator] No sessionId provided for continue, using active session: ${sessionIdToUse}`);
                         } else {
-                            throw new Error('无法继续执行：未提供 session_id 且当前没有活动的调试会话。');
+                            throw new Error('Cannot continue execution: session_id not provided and no active debug session.');
                         }
                     }
                     // 调用 DebuggerApiWrapper，此时 sessionIdToUse 必为 string
@@ -182,7 +182,7 @@ export class McpServerManager implements vscode.Disposable {
                             sessionIdToUse = activeSession.id;
                             this.outputChannel.appendLine(`[Coordinator] No sessionId provided for step, using active session: ${sessionIdToUse}`);
                         } else {
-                            throw new Error('无法执行单步操作：未提供 session_id 且当前没有活动的调试会话。');
+                            throw new Error('Cannot perform step operation: session_id not provided and no active debug session.');
                         }
                     }
                     // 调用 DebuggerApiWrapper 处理单步执行，此时 sessionIdToUse 必为 string
@@ -200,14 +200,14 @@ export class McpServerManager implements vscode.Disposable {
                     break;
                 }
                 default:
-                    throw new Error(`不支持的命令: ${command}`);
+                    throw new Error(`Unsupported command: ${command}`);
             }
         } catch (error: any) {
             console.error(`[Coordinator] Error handling MCP request ${requestId} (${command}):`, error);
             this.outputChannel.appendLine(`[Coordinator Error] Handling MCP request ${requestId} (${command}): ${error.message}\n${error.stack}`);
             status = Constants.IPC_STATUS_ERROR;
-            errorMessage = error.message || '处理请求时发生未知错误';
-            // 对于特定错误类型，可以设置不同的 responsePayload
+            errorMessage = error.message || 'Unknown error occurred while processing request';
+            // For specific error types, different responsePayload can be set
             if (responsePayload && typeof responsePayload === 'object' && responsePayload.status === Constants.IPC_STATUS_ERROR) {
                 // 如果 DebuggerApiWrapper 返回的就是错误状态，直接使用它的 message
                 errorMessage = responsePayload.message || errorMessage;
@@ -220,7 +220,7 @@ export class McpServerManager implements vscode.Disposable {
             requestId,
             status,
             payload: status === Constants.IPC_STATUS_SUCCESS ? responsePayload : undefined,
-            error: status === Constants.IPC_STATUS_ERROR ? { message: errorMessage || '发生未知错误' } : undefined,
+            error: status === Constants.IPC_STATUS_ERROR ? { message: errorMessage || 'Unknown error occurred' } : undefined,
         };
     }
     /**
@@ -240,7 +240,7 @@ export class McpServerManager implements vscode.Disposable {
         if (this.processManager.getStatus() !== 'stopped') {
             const status = this.processManager.getStatus();
             const port = this.processManager.getCurrentPort();
-            vscode.window.showInformationMessage(`MCP 服务器已在运行或正在启动 (状态: ${status}${port ? `, 端口: ${port}` : ''})。`);
+            vscode.window.showInformationMessage(`MCP server is already running or starting (Status: ${status}${port ? `, Port: ${port}` : ''}).`);
             return;
         }
 
@@ -254,9 +254,9 @@ export class McpServerManager implements vscode.Disposable {
                     targetPort = newPort; // 更新目标端口
                     const newPortInUse = await isPortInUse(targetPort);
                     if (newPortInUse) {
-                        vscode.window.showErrorMessage(`新端口 ${targetPort} 仍然被占用。请检查或尝试其他端口。`);
-                        this.statusBarManager.setStatus('error', null); // 使用字符串字面量
-                        return; // 无法启动
+                        vscode.window.showErrorMessage(`New port ${targetPort} is still in use. Please check or try another port.`);
+                        this.statusBarManager.setStatus('error', null); // Use string literal
+                        return; // Cannot start
                     }
                 } else {
                     // 用户取消输入新端口
@@ -267,8 +267,8 @@ export class McpServerManager implements vscode.Disposable {
 
             const workspaceFolders = vscode.workspace.workspaceFolders;
             if (!workspaceFolders || workspaceFolders.length === 0) {
-                vscode.window.showErrorMessage('无法启动 Debug-MCP 服务器：请先打开一个工作区文件夹。');
-                this.statusBarManager.setStatus('error', null); // 使用字符串字面量
+                vscode.window.showErrorMessage('Cannot start Debug-MCP server: Please open a workspace folder first.');
+                this.statusBarManager.setStatus('error', null); // Use string literal
                 return;
             }
             const workspacePath = workspaceFolders[0].uri.fsPath;
@@ -288,8 +288,8 @@ export class McpServerManager implements vscode.Disposable {
 
         } catch (error: any) {
             console.error('[Coordinator] Error starting MCP server:', error);
-            vscode.window.showErrorMessage(`启动 MCP 服务器时出错: ${error.message}`);
-            this.statusBarManager.setStatus('error', null); // 使用字符串字面量
+            vscode.window.showErrorMessage(`Error starting MCP server: ${error.message}`);
+            this.statusBarManager.setStatus('error', null); // Use string literal
         }
     }
 
@@ -331,7 +331,7 @@ export class McpServerManager implements vscode.Disposable {
             const portToUse = this.processManager.getCurrentPort() ?? getStoredPort(this.context);
 
             if (!portToUse) {
-                vscode.window.showWarningMessage('MCP 服务器端口未设置或服务器未运行。无法复制配置。');
+                vscode.window.showWarningMessage('MCP server port is not set or server is not running. Cannot copy configuration.');
                 this.outputChannel.appendLine('[Coordinator] Attempted to copy config, but port is not available.');
                 return;
             }
@@ -347,12 +347,12 @@ export class McpServerManager implements vscode.Disposable {
 
             const configString = JSON.stringify(mcpConfig, null, 2);
             await vscode.env.clipboard.writeText(configString);
-            vscode.window.showInformationMessage(`MCP 服务器配置 (端口: ${portToUse}) 已复制到剪贴板！`);
-            this.outputChannel.appendLine(`[Coordinator] MCP server configuration (Port: ${portToUse}) copied to clipboard.`);
+            vscode.window.showInformationMessage(`MCP server configuration (Port: ${portToUse}) copied to clipboard!`);
+            this.outputChannel.appendLine('[Coordinator] MCP server configuration (Port: ${portToUse}) copied to clipboard.');
             console.log('[Coordinator] MCP config copied:', configString);
 
         } catch (error: unknown) {
-            const errorMsg = `无法复制 MCP 配置: ${error instanceof Error ? error.message : String(error)}`;
+            const errorMsg = `Failed to copy MCP configuration: ${error instanceof Error ? error.message : String(error)}`;
             console.error('[Coordinator]', errorMsg);
             this.outputChannel.appendLine(`[Coordinator Error] ${errorMsg}`);
             vscode.window.showErrorMessage(errorMsg);
@@ -364,25 +364,25 @@ export class McpServerManager implements vscode.Disposable {
      */
     private async handlePortConflict(occupiedPort: number): Promise<number | null> {
         const choice = await vscode.window.showWarningMessage(
-            `MCP 服务器端口 ${occupiedPort} 已被占用。`,
-            { modal: true }, // 模态对话框，阻止其他操作
+            `MCP server port ${occupiedPort} is already in use.`,
+            { modal: true }, // Modal dialog, blocks other operations
             Constants.UI_TEXT_INPUT_NEW_PORT
         );
 
         if (choice === Constants.UI_TEXT_INPUT_NEW_PORT) {
             const newPortStr = await vscode.window.showInputBox({
-                prompt: `请输入一个新的端口号 (1025-65535)，当前端口 ${occupiedPort} 被占用。`,
-                placeHolder: `例如: ${Constants.DEFAULT_MCP_PORT + 1}`, // 建议一个不同的端口
-                ignoreFocusOut: true, // 防止失去焦点时关闭输入框
-                validateInput: (value) => {
-                    if (!value) { return '端口号不能为空。'; }
-                    const portNum = parseInt(value, 10);
-                    if (!isValidPort(portNum)) {
-                        return '请输入 1025 到 65535 之间的有效端口号。';
+                    prompt: `Please enter a new port number (1025-65535), current port ${occupiedPort} is in use.`,
+                    placeHolder: `e.g.: ${Constants.DEFAULT_MCP_PORT + 1}`, // Suggest a different port
+                    ignoreFocusOut: true, // Prevent input box from closing when losing focus
+                    validateInput: (value) => {
+                        if (!value) { return 'Port number cannot be empty.'; }
+                        const portNum = parseInt(value, 10);
+                        if (!isValidPort(portNum)) {
+                            return 'Please enter a valid port number between 1025 and 65535.';
+                        }
+                        return null;
                     }
-                    return null;
-                }
-            });
+                });
 
             if (newPortStr) {
                 const newPort = parseInt(newPortStr, 10);
@@ -392,8 +392,8 @@ export class McpServerManager implements vscode.Disposable {
                 return newPort;
             }
         }
-        // 用户取消或关闭了输入框
-        vscode.window.showInformationMessage('MCP 服务器启动已取消。');
+        // User cancelled or closed the input box
+        vscode.window.showInformationMessage('MCP server startup cancelled.');
         this.outputChannel.appendLine('[Coordinator] Server start cancelled by user during port conflict resolution.');
         return null;
     }

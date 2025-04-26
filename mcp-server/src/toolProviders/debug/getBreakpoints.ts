@@ -5,40 +5,40 @@ import { logger } from '../../config'; // 导入 logger
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 // 输入 Schema (保持不变)
-export const getBreakpointsSchema = z.object({}).describe("获取当前设置的所有断点，无需参数");
+export const getBreakpointsSchema = z.object({}).describe("Retrieves all currently set breakpoints, requires no parameters.");
 
 export type GetBreakpointsArgs = z.infer<typeof getBreakpointsSchema>;
 
 // --- 新增：定义单个断点信息的 Schema (与 setBreakpoint 类似，但根据 get 的实际返回调整) ---
 // 假设 getBreakpoints 返回的结构与 setBreakpoint 确认时的结构一致
 const BreakpointInfoSchema = z.object({
-    id: z.string().optional().describe("断点的唯一标识符"),
-    verified: z.boolean().describe("断点是否已被验证"),
+    id: z.string().optional().describe("The unique identifier of the breakpoint"),
+    verified: z.boolean().describe("Whether the breakpoint has been verified"),
     source: z.object({
-        path: z.string().describe("断点所在文件的绝对路径")
-    }).optional().describe("断点源文件信息"), // Source might be optional if breakpoint is unverified/pending
-    line: z.number().int().positive().describe("断点设置的行号"),
-    column: z.number().int().positive().optional().describe("断点设置的列号"),
-    condition: z.string().optional().describe("断点条件"),
-    hitCondition: z.string().optional().describe("断点命中条件"),
-    logMessage: z.string().optional().describe("日志断点消息"),
-    message: z.string().optional().describe("与断点相关的消息"),
-    timestamp: z.string().datetime().optional().describe("断点创建/更新的时间戳") // Timestamp might be per-breakpoint or global
+        path: z.string().describe("The absolute path of the file where the breakpoint is located")
+    }).optional().describe("Source file information for the breakpoint"), // Source might be optional if breakpoint is unverified/pending
+    line: z.number().int().positive().describe("The line number where the breakpoint is set"),
+    column: z.number().int().positive().optional().describe("The column number where the breakpoint is set"),
+    condition: z.string().optional().describe("The breakpoint condition"),
+    hitCondition: z.string().optional().describe("The breakpoint hit condition"),
+    logMessage: z.string().optional().describe("The log breakpoint message"),
+    message: z.string().optional().describe("A message related to the breakpoint"),
+    timestamp: z.string().datetime().optional().describe("Timestamp of breakpoint creation/update") // Timestamp might be per-breakpoint or global
 }).passthrough(); // Allow other potential fields from the debug adapter
 
 // --- 新增：定义工具执行结果的 Schema ---
 const GetBreakpointsOutputSchema = z.object({
     status: z.enum([Constants.IPC_STATUS_SUCCESS, Constants.IPC_STATUS_ERROR]),
-    timestamp: z.string().datetime().optional().describe("获取断点列表的时间戳 (ISO 8601)"), // Make timestamp optional as well
-    breakpoints: z.array(BreakpointInfoSchema).optional().describe("成功时返回的断点信息列表"),
-    message: z.string().optional().describe("失败时返回的错误信息"),
-}).describe("获取断点列表工具的执行结果");
+    timestamp: z.string().datetime().optional().describe("Timestamp when the breakpoint list was retrieved (ISO 8601)"), // Make timestamp optional as well
+    breakpoints: z.array(BreakpointInfoSchema).optional().describe("List of breakpoint information returned on success"),
+    message: z.string().optional().describe("Error message returned on failure"),
+}).describe("Execution result of the get breakpoints tool");
 
 
 // --- 新增：定义工具对象 ---
 export const getBreakpointsTool = {
     name: Constants.TOOL_GET_BREAKPOINTS,
-    description: "获取当前在 VS Code 中设置的所有断点。",
+    description: "Retrieves all breakpoints currently set in VS Code.",
     inputSchema: getBreakpointsSchema,
     outputSchema: GetBreakpointsOutputSchema,
 
@@ -82,24 +82,24 @@ export const getBreakpointsTool = {
                         breakpoints: validatedPayload.breakpoints
                     };
                  } catch (validationError: any) {
-                    const errorMessage = `插件返回的数据格式无效: ${validationError.message}`;
+                    const errorMessage = `Invalid data format returned by plugin: ${validationError.message}`;
                     logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                     return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
                  }
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
-                const errorMessage = pluginResponse.error?.message || '插件获取断点列表失败，未指定错误。';
+                const errorMessage = pluginResponse.error?.message || 'Plugin failed to get breakpoint list, no specific error provided.';
                 logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             } else {
-                const errorMessage = '插件返回成功但响应负载格式意外或缺失。';
+                const errorMessage = 'Plugin returned success but response payload format is unexpected or missing.';
                 logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
 
         } catch (error: any) {
-            const errorMessage = error?.message || "获取断点列表时发生通信错误或意外问题。";
+            const errorMessage = error?.message || "Communication error or unexpected issue occurred while getting breakpoint list.";
             logger.error(`[MCP Tool - ${toolName}] Error: ${errorMessage}`, error); // 使用 logger
-            return { status: Constants.IPC_STATUS_ERROR, message: `与 VS Code 扩展通信时出错: ${errorMessage}` };
+            return { status: Constants.IPC_STATUS_ERROR, message: `Error communicating with VS Code extension: ${errorMessage}` };
         }
     }
 };

@@ -7,8 +7,8 @@ import type { StartDebuggingRequestPayload, StartDebuggingResponsePayload } from
 
 // Input Schema (Keep as is)
 export const startDebuggingSchema = z.object({
-  configuration_name: z.string().min(1, "Configuration name cannot be empty.").describe("launch.json 中的配置名称"),
-  no_debug: z.boolean().optional().default(false).describe("是否以非调试模式启动"),
+  configuration_name: z.string().min(1, "Configuration name cannot be empty.").describe("The name of the configuration in launch.json"),
+  no_debug: z.boolean().optional().default(false).describe("Whether to start in non-debug mode"),
 });
 
 export type StartDebuggingArgs = z.infer<typeof startDebuggingSchema>;
@@ -19,16 +19,16 @@ export type StartDebuggingArgs = z.infer<typeof startDebuggingSchema>;
 // Let's define a Zod schema for clarity and consistency.
 const StartDebuggingOutputSchema = z.object({
     status: z.enum(["stopped", "completed", "error", "timeout", "interrupted", "running"]), // Add 'running' if applicable
-    data: z.any().optional().describe("当 status 为 'stopped' 时，包含停止事件的详细信息。"),
-    message: z.string().optional().describe("当 status 为 'completed', 'error', 'timeout', 'interrupted' 时，包含描述信息。"),
-    session_id: z.string().optional().describe("成功启动的调试会话 ID"), // Add session_id if returned by plugin
-}).describe("启动调试工具的执行结果");
+    data: z.any().optional().describe("Contains details of the stop event when status is 'stopped'."),
+    message: z.string().optional().describe("Contains descriptive information when status is 'completed', 'error', 'timeout', or 'interrupted'."),
+    session_id: z.string().optional().describe("The ID of the successfully started debug session"), // Add session_id if returned by plugin
+}).describe("Execution result of the start debugging tool");
 
 
 // --- 新增：定义工具对象 ---
 export const startDebuggingTool = {
     name: Constants.TOOL_START_DEBUGGING,
-    description: "根据 launch.json 中的配置名称启动一个调试会话。",
+    description: "Starts a debug session based on the configuration name in launch.json.",
     inputSchema: startDebuggingSchema,
     outputSchema: StartDebuggingOutputSchema, // Use the new output schema
 
@@ -77,17 +77,17 @@ export const startDebuggingTool = {
                     logger.info(`[MCP Tool - ${toolName}] Debugging started/stopped with status: ${validatedResult.status}`); // 使用 logger
                     return validatedResult;
                 } catch (validationError: any) {
-                    const errorMessage = `插件返回的启动调试结果格式无效: ${validationError.message}`;
+                    const errorMessage = `Invalid start debugging result format returned by plugin: ${validationError.message}`;
                     logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                     // Return an error status consistent with the schema
                     return { status: 'error', message: errorMessage };
                 }
             } else if (pluginResponse.status === Constants.IPC_STATUS_ERROR) {
-                const errorMessage = pluginResponse.error?.message || '插件启动调试失败，未指定错误。';
+                const errorMessage = pluginResponse.error?.message || 'Plugin failed to start debugging, no specific error provided.';
                 logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: 'error', message: errorMessage };
             } else {
-                const errorMessage = '插件返回成功但响应负载格式意外或缺失。';
+                const errorMessage = 'Plugin returned success but response payload format is unexpected or missing.';
                 logger.error(`[MCP Tool - ${toolName}] ${errorMessage}`, pluginResponse.payload); // 使用 logger
                 return { status: 'error', message: errorMessage };
             }
@@ -95,10 +95,10 @@ export const startDebuggingTool = {
         } catch (error: any) {
             logger.error(`[MCP Tool - ${toolName}] Error during communication:`, error); // 使用 logger
             let errorStatus: z.infer<typeof StartDebuggingOutputSchema>['status'] = 'error';
-            let errorMessage = `MCP 服务器错误: ${error.message || '未知通信错误'}`;
+            let errorMessage = `MCP Server error: ${error.message || 'Unknown communication error'}`;
             if (error.message?.includes('timed out')) {
                 errorStatus = 'timeout'; // Use 'timeout' status from the schema
-                errorMessage = `MCP 服务器: 等待插件响应超时 (${toolTimeout}ms)。`;
+                errorMessage = `MCP Server: Timeout waiting for plugin response (${toolTimeout}ms).`;
             }
             return { status: errorStatus, message: errorMessage };
         }

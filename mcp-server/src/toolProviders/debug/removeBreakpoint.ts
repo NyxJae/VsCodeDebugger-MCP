@@ -6,14 +6,14 @@ import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.j
 
 // --- Input Schema Definitions (Keep as is) ---
 const LocationSchema = z.object({
-  file_path: z.string().describe('要移除断点的源代码文件的绝对路径或相对于工作区的路径。'),
-  line_number: z.number().int().positive().describe('要移除断点的行号 (基于 1 开始计数)。'),
+  file_path: z.string().describe('The absolute path or workspace-relative path of the source file from which to remove the breakpoint.'),
+  line_number: z.number().int().positive().describe('The 1-based line number of the breakpoint to remove.'),
 });
 
 export const BaseRemoveBreakpointInputSchema = z.object({
-  breakpoint_id: z.number().int().positive().optional().describe('要移除的断点的唯一 ID。'),
-  location: LocationSchema.optional().describe('指定要移除断点的位置。'),
-  clear_all: z.boolean().optional().describe('如果设置为 true，则尝试移除所有断点。'),
+  breakpoint_id: z.number().int().positive().optional().describe('The unique ID of the breakpoint to remove.'),
+  location: LocationSchema.optional().describe('Specifies the location of the breakpoint to remove.'),
+  clear_all: z.boolean().optional().describe('If set to true, attempts to remove all breakpoints.'),
 });
 
 // Refined schema to ensure exactly one parameter is provided
@@ -25,7 +25,7 @@ export const RemoveBreakpointInputSchema = BaseRemoveBreakpointInputSchema.refin
     return providedParams.length === 1;
   },
   {
-    message: '必须且只能提供 breakpoint_id、location 或 clear_all 中的一个参数。',
+    message: 'Exactly one of breakpoint_id, location, or clear_all must be provided.',
   }
 );
 
@@ -34,14 +34,14 @@ export type RemoveBreakpointInput = z.infer<typeof RemoveBreakpointInputSchema>;
 // --- 新增：定义工具执行结果的 Schema ---
 const RemoveBreakpointOutputSchema = z.object({
     status: z.enum([Constants.IPC_STATUS_SUCCESS, Constants.IPC_STATUS_ERROR]),
-    message: z.string().optional().describe("操作结果的消息，成功或失败时都可能包含"),
-}).describe("移除断点工具的执行结果");
+    message: z.string().optional().describe("A message describing the result of the operation, may be included on success or failure"),
+}).describe("Execution result of the remove breakpoint tool");
 
 
 // --- 新增：定义工具对象 ---
 export const removeBreakpointTool = {
     name: Constants.TOOL_REMOVE_BREAKPOINT,
-    description: "移除一个或所有断点。可以通过断点 ID、位置或设置 clear_all=true 来指定。",
+    description: "Removes one or all breakpoints. Can be specified by breakpoint ID, location, or by setting clear_all=true.",
     inputSchema: RemoveBreakpointInputSchema, // Use the refined schema for input validation
     outputSchema: RemoveBreakpointOutputSchema,
     baseinputSchema: BaseRemoveBreakpointInputSchema, // Keep base schema if needed elsewhere
@@ -78,17 +78,17 @@ export const removeBreakpointTool = {
             logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, response); // 使用 logger
 
             if (response.status === Constants.IPC_STATUS_SUCCESS) {
-                const successMessage = typeof response.payload?.message === 'string' ? response.payload.message : '断点移除操作已成功请求。';
+                const successMessage = typeof response.payload?.message === 'string' ? response.payload.message : 'Breakpoint removal operation successfully requested.';
                 logger.info(`[MCP Tool - ${toolName}] Success: ${successMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_SUCCESS, message: successMessage };
             } else {
-                const errorMessage = response.error?.message || '插件移除断点时返回未知错误。';
+                const errorMessage = response.error?.message || 'Plugin returned an unknown error while removing breakpoint.';
                 logger.error(`[MCP Tool - ${toolName}] Plugin reported error: ${errorMessage}`); // 使用 logger
                 return { status: Constants.IPC_STATUS_ERROR, message: errorMessage };
             }
         } catch (error: any) {
-            const commErrorMessage = error?.message || '与插件通信失败或发生未知错误。';
-            const fullCommMessage = `移除断点时发生通信错误: ${commErrorMessage}`;
+            const commErrorMessage = error?.message || 'Failed to communicate with plugin or an unknown error occurred.';
+            const fullCommMessage = `Communication error occurred while removing breakpoint: ${commErrorMessage}`;
             logger.error(`[MCP Tool - ${toolName}] Communication error:`, error); // 使用 logger
             return { status: Constants.IPC_STATUS_ERROR, message: fullCommMessage };
         }

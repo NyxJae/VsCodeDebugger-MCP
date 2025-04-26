@@ -6,21 +6,21 @@ import { logger } from '../../config'; // 导入 logger
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 const StepExecutionParamsSchema = z.object({
-    session_id: z.string().optional().describe("目标调试会话的 ID。如果省略，将尝试使用当前活动的调试会话。"),
-    thread_id: z.number().int().describe('需要执行单步操作的线程的 ID (从 stop_event_data.thread_id 获取)。'),
-    step_type: z.enum(['over', 'into', 'out']).describe("指定单步执行的具体类型: 'over', 'into', 'out'。")
+    session_id: z.string().optional().describe("The ID of the target debug session. If omitted, the currently active debug session will be attempted."),
+    thread_id: z.number().int().describe('The ID of the thread for which to perform the step operation (obtained from stop_event_data.thread_id).'),
+    step_type: z.enum(['over', 'into', 'out']).describe("Specifies the type of step execution: 'over', 'into', or 'out'.")
 });
 
 const AsyncDebugResultSchema = z.object({
     status: z.enum(["stopped", "completed", "error", "timeout", "interrupted"]),
-    stop_event_data: z.any().optional().describe("当 status 为 'stopped' 时，包含停止事件的详细信息。"),
-    message: z.string().optional().describe("当 status 为 'completed', 'error', 'timeout', 'interrupted' 时，包含描述信息。")
-}).describe("异步调试操作的结果");
+    stop_event_data: z.any().optional().describe("Contains details of the stop event when status is 'stopped'."),
+    message: z.string().optional().describe("Contains descriptive information when status is 'completed', 'error', 'timeout', or 'interrupted'.")
+}).describe("Result of an asynchronous debug operation");
 
 
 export const stepExecutionTool = {
     name: Constants.TOOL_NAME_STEP_EXECUTION, // Correct constant name
-    description: '当调试器暂停时，执行一次单步操作 (步过, 步入, 步出)。如果省略 session_id，将尝试使用活动会话。',
+    description: 'When the debugger is paused, performs a single step operation (step over, step into, or step out). If session_id is omitted, the active session will be attempted.',
     inputSchema: StepExecutionParamsSchema,
     outputSchema: AsyncDebugResultSchema,
 
@@ -89,15 +89,15 @@ export const stepExecutionTool = {
                 } else if (result.status === 'error') {
                     return {
                         status: 'error',
-                        message: result.message || '插件返回错误状态但无消息',
+                        message: result.message || 'Plugin returned error status but no message',
                     };
                 }
                  // 如果 payload.status 不是预期的值，记录错误并返回 error 状态
-                 const unexpectedStatusMsg = `处理插件响应时遇到意外的内部状态: ${(result as any).status}`;
+                 const unexpectedStatusMsg = `Encountered unexpected internal status when processing plugin response: ${(result as any).status}`;
                  logger.error(`[MCP Tool - ${toolName}] ${unexpectedStatusMsg}`, result);
                  return { status: 'error', message: unexpectedStatusMsg };
             } else { // This else corresponds to the outer if (response.status === ...)
-                 const errorMessage = response.error?.message || '插件通信失败或返回无效响应';
+                 const errorMessage = response.error?.message || 'Plugin communication failed or returned invalid response';
                  logger.error(`[MCP Tool - ${toolName}] Plugin communication error: ${errorMessage}`); // 使用 logger
                  return {
                      status: 'error',
@@ -109,7 +109,7 @@ export const stepExecutionTool = {
             const status = error.message?.includes('timed out') ? 'timeout' : 'error';
             return {
                 status: status,
-                message: `执行 ${toolName} 工具时出错: ${error.message || error}`,
+                message: `Error executing ${toolName} tool: ${error.message || error}`,
             };
         }
     },

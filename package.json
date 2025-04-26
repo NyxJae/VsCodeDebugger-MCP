@@ -1,7 +1,7 @@
 {
   "name": "vscode-debugger-mcp",
   "displayName": "VsCode-Debugger-MCP",
-  "description": "一个 VS Code 调试器与 MCP 服务器交互的插件",
+  "description": "A VS Code debugger extension that interacts with an MCP server",
   "version": "1.0.0",
   "publisher": "NyxJae",
   "repository": {

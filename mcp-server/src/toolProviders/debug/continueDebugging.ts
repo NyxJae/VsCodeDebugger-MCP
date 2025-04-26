@@ -6,21 +6,21 @@ import { logger } from '../../config'; // 导入 logger
 import { RequestHandlerExtra } from '@modelcontextprotocol/sdk/shared/protocol.js'; // 导入 RequestHandlerExtra
 
 const ContinueDebuggingParamsSchema = z.object({
-    session_id: z.string().optional().describe("目标调试会话的 ID。如果省略，将尝试使用当前活动的调试会话。"),
-    thread_id: z.number().int().describe("需要恢复执行的线程的 ID。"),
+    session_id: z.string().optional().describe("The ID of the target debug session. If omitted, the currently active debug session will be attempted."),
+    thread_id: z.number().int().describe("The ID of the thread whose execution needs to be resumed."),
 });
 
 // 在这里定义异步结果 Schema
 const AsyncDebugResultSchema = z.object({
     status: z.enum(["stopped", "completed", "error", "timeout", "interrupted"]),
-    stop_event_data: z.any().optional().describe("当 status 为 'stopped' 时，包含停止事件的详细信息。"),
-    message: z.string().optional().describe("当 status 为 'completed', 'error', 'timeout', 'interrupted' 时，包含描述信息。")
-}).describe("异步调试操作的结果");
+    stop_event_data: z.any().optional().describe("Contains details of the stop event when status is 'stopped'."),
+    message: z.string().optional().describe("Contains descriptive information when status is 'completed', 'error', 'timeout', or 'interrupted'.")
+}).describe("Result of an asynchronous debug operation");
 
 
 export const continueDebuggingTool = {
     name: "continue_debugging", // 恢复使用字符串名称，因为常量不存在
-    description: "当调试器暂停时，命令指定线程恢复执行，并等待下一次暂停或结束。如果省略 session_id，将尝试使用活动会话。",
+    description: "When the debugger is paused, this command resumes execution of the specified thread and waits for the next pause or termination. If session_id is omitted, the active session will be attempted.",
     inputSchema: ContinueDebuggingParamsSchema,
     outputSchema: AsyncDebugResultSchema,
 
