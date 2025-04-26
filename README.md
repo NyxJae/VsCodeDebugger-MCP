@@ -65,7 +65,6 @@ If you find errors, you can view the logs in the VS Code Output panel for easier
 *   **Expression Evaluation**:
     *   Implement `evaluate_expression` tool: Evaluate an expression in the context of a specified stack frame.
 *   **Internationalization**
-*   *   Translate tooltips to English.
 *   *   English version of README images and usage guide.
 ## 🎉 Release Notes
 
