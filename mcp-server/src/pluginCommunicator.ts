@@ -56,9 +56,12 @@ export function sendRequestToPlugin<T = any>(request: { command: string; payload
 
 // 处理来自插件的响应
 export function handlePluginResponse(response: PluginResponse<any>): void {
+    // 增强日志：记录收到的 response 的完整内容
+    console.log(`[MCP Server] Received plugin response:`, JSON.stringify(response));
+
     // 基本类型检查，确保是预期的响应结构
     if (response?.type !== 'response' || !response.requestId) {
-        console.error(`[MCP Server] Received invalid IPC response:`, response);
+        console.error(`[MCP Server] Received invalid IPC response (after stringify):`, response); // 保持原有日志，但指出是在 stringify 之后
         return;
     }
 

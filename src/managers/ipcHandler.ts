@@ -102,18 +102,26 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
                     }
                     break;
 
-                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST: // 新增处理 startDebugging
-                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_START_DEBUGGING_REQUEST}' request (ID: ${requestId})`);
+                case Constants.IPC_COMMAND_START_DEBUGGING_REQUEST:
+                    // 增强日志：记录完整的 payload
+                    this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_START_DEBUGGING_REQUEST}' request (ID: ${requestId}). Payload: ${JSON.stringify(payload)}`);
                     const startResult = await this.debuggerApiWrapper.startDebuggingAndWait(
                         (payload as StartDebuggingRequestPayload).configurationName,
                         (payload as StartDebuggingRequestPayload).noDebug
                     );
-                    // startDebuggingAndWait 返回的是 StartDebuggingResponsePayload
-                    // sendResponseToServer 会处理这种特殊 payload
-                    this.sendResponseToServer(requestId, startResult.status, startResult); // 传递内部 status 和完整 payload
+                    // 增强日志：记录返回的 result，并安全地访问可选属性
+                    let logMessage = `[IPC Handler] Result from startDebuggingAndWait for request ${requestId}: Status=${startResult.status}`;
+                    if ('message' in startResult && startResult.message) {
+                        logMessage += `, Message=${startResult.message}`;
+                    }
+                    if ('data' in startResult && startResult.data) {
+                        logMessage += `, Data=${JSON.stringify(startResult.data)}`;
+                    }
+                    this.outputChannel.appendLine(logMessage);
+                    this.sendResponseToServer(requestId, startResult.status, startResult);
                     break;
 
-                case Constants.IPC_COMMAND_STEP_EXECUTION: // 新增处理 stepExecution
+                case Constants.IPC_COMMAND_STEP_EXECUTION:
                     this.outputChannel.appendLine(`[IPC Handler] Handling '${Constants.IPC_COMMAND_STEP_EXECUTION}' request (ID: ${requestId})`);
                     try {
                         const params = payload as StepExecutionParams; // 类型断言
@@ -249,14 +257,17 @@ export class IpcHandler implements vscode.Disposable { // 实现 Disposable 接�
         const responseMessage: PluginResponse = {
             type: Constants.IPC_MESSAGE_TYPE_RESPONSE,
             requestId: requestId,
-            status: finalStatus, // 使用最终确定的 IPC 状态
+            status: finalStatus,
             payload: finalPayload,
             error: finalError
         };
 
-        this.outputChannel.appendLine(`[IPC Handler] Preparing to send response via ProcessManager for request ${requestId}: ${finalStatus}`);
+        // 增强日志：记录最终发送给 MCP 服务器的 responseMessage
+        this.outputChannel.appendLine(`[IPC Handler] Sending response to MCP Server for request ${requestId}. Full response: ${JSON.stringify(responseMessage)}`);
+        console.log(`[IPC Handler] Sending response to MCP Server for request ${requestId}:`, responseMessage);
+
         try {
-            const success = this.processManager.send(responseMessage); // 使用 ProcessManager 发送
+            const success = this.processManager.send(responseMessage);
             this.outputChannel.appendLine(`[IPC Handler] processManager.send returned: ${success} for request ${requestId}`);
 
             if (!success) {

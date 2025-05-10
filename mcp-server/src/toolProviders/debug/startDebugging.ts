@@ -54,6 +54,10 @@ export const startDebuggingTool = {
                 toolTimeout
             );
 
+            // 增强日志：记录从插件收到的 pluginResponse 的完整内容
+            logger.debug(`[MCP Tool - ${toolName}] Received full response from plugin for request ${pluginResponse.requestId}:`, JSON.stringify(pluginResponse));
+
+
             // --- 更新 IPC 响应处理日志 ---
             const sessionId = extra?.sessionId; // 从 extra 获取 sessionId
             const payloadSnippet = JSON.stringify(pluginResponse.payload).substring(0, 100);
@@ -66,7 +70,7 @@ export const startDebuggingTool = {
             }
             // --- 日志结束 ---
 
-            logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse); // 使用 logger
+            // logger.debug(`[MCP Tool - ${toolName}] Received response from plugin:`, pluginResponse); // 这行日志可以被上面的完整日志替代
 
             if (pluginResponse.status === Constants.IPC_STATUS_SUCCESS && pluginResponse.payload) {
                 // Validate and return the payload according to StartDebuggingOutputSchema

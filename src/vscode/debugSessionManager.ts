@@ -1,229 +1,184 @@
 // src/vscode/debugSessionManager.ts
 import * as vscode from 'vscode';
-import { DebugStateProvider } from './debugStateProvider'; // 引入依赖
-import { ContinueDebuggingParams, StartDebuggingResponsePayload, StopEventData, VariableInfo, StepExecutionParams, StepExecutionResult } from '../types'; // 确认路径和类型
-import { IPC_STATUS_SUCCESS, IPC_STATUS_ERROR, IPC_STATUS_STOPPED, IPC_STATUS_COMPLETED, IPC_STATUS_TIMEOUT, IPC_STATUS_INTERRUPTED } from '../constants'; // 导入所有需要的常量
+import { DebugStateProvider } from './debugStateProvider';
+import { 
+    ContinueDebuggingParams, 
+    StartDebuggingResponsePayload, 
+    StopEventData, 
+    StepExecutionParams, 
+    StepExecutionResult 
+} from '../types';
+import { 
+    IPC_STATUS_SUCCESS, 
+    IPC_STATUS_ERROR, 
+    IPC_STATUS_STOPPED, 
+    IPC_STATUS_COMPLETED, 
+    IPC_STATUS_TIMEOUT, 
+    IPC_STATUS_INTERRUPTED 
+} from '../constants';
 
-// PendingRequest 接口定义 (用于 start 和 continue)
 interface PendingRequest {
-    configurationName: string; // 用于启动时匹配
+    configurationName: string;
     resolve: (value: StartDebuggingResponsePayload) => void;
-    timeoutTimer: NodeJS.Timeout;
-    listeners: vscode.Disposable[]; // 用于管理 session 生命周期监听器
-    trackerDisposable?: vscode.Disposable; // 用于管理 tracker factory
-    sessionId?: string; // 在 onDidStartDebugSession 中设置
-    isResolved: boolean; // 标记是否已被解决，防止重复处理
+    // reject: (reason?: any) => void; // Not used for start/continue as per current structure, handled by resolve with error status
+    timeoutHandle: NodeJS.Timeout; // Renamed from timeoutTimer to match task plan
+    listeners: vscode.Disposable[];
+    trackerDisposable?: vscode.Disposable;
+    currentMonitoringSessionId?: string; // Core field for session tracking
+    isResolved: boolean;
+    isExtensionHostCase?: boolean; // Renamed from isExtensionHostDebug
+    initialSessionId?: string;
+    requestId: string;
+    // configName is configurationName
+}
+
+interface PendingStepRequest {
+    resolve: (result: StepExecutionResult) => void;
+    reject: (reason?: any) => void;
+    timeoutHandle: NodeJS.Timeout; // Renamed from timer
+    threadId: number;
+    stepType: 'over' | 'into' | 'out';
+    currentMonitoringSessionId: string; // Renamed from sessionId for consistency
+    isResolved: boolean;
+    requestId: string;
 }
 
 export class DebugSessionManager {
-    private pendingStartRequests = new Map<string, PendingRequest>(); // key 是 requestId
-    private pendingContinueRequests = new Map<string, PendingRequest>(); // key 是 requestId
-    // 新增 Map 管理 step 请求
-    private pendingStepRequests = new Map<string, {
-        resolve: (result: StepExecutionResult) => void;
-        reject: (reason?: any) => void;
-        timer: NodeJS.Timeout;
-        threadId: number; // 记录请求对应的 threadId
-        stepType: 'over' | 'into' | 'out'; // 记录请求的 stepType
-        sessionId: string; // 关联 sessionId
-        isResolved: boolean; // 标记是否已解决
-    }>();
-    private sessionListeners = new Map<string, vscode.Disposable[]>(); // key 是 sessionId
-    private requestCounter = 0; // 用于生成唯一的请求 ID
+    private pendingStartRequests = new Map<string, PendingRequest>(); // Key is requestId
+    private pendingContinueRequests = new Map<string, PendingRequest>(); // Key is requestId, uses PendingRequest for now
+    private pendingStepRequests = new Map<string, PendingStepRequest>();
+    private sessionListeners = new Map<string, vscode.Disposable[]>();
+    private activeSessions = new Map<string, vscode.DebugSession>(); 
+    private requestCounter = 0;
 
     constructor(private debugStateProvider: DebugStateProvider) {
         this.initializeDebugListeners();
-        console.log("DebugSessionManager initialized.");
+        console.log("[DebugSessionManager] Initialized.");
     }
-
-    public async continueDebuggingAndWait(params: ContinueDebuggingParams): Promise<StartDebuggingResponsePayload> {
-        const { sessionId, threadId } = params;
-        const requestId = `continue-${this.requestCounter++}`;
-        console.log(`[DebugSessionManager] Starting continue request: ${requestId} for session ${sessionId}, thread ${threadId}`);
-
-        return new Promise<StartDebuggingResponsePayload>(async (resolve) => {
-            const session = vscode.debug.activeDebugSession?.id === sessionId ? vscode.debug.activeDebugSession : undefined; // 确保是活动会话
-
-            if (!session) {
-                resolve({ status: IPC_STATUS_ERROR, message: `找不到活动的调试会话 ID: ${sessionId}` });
-                return;
-            }
-
-            // --- 设置超时和 PendingRequest ---
-            const timeout = 60000; // 超时时间 (例如 60 秒)
-            const timeoutTimer = setTimeout(() => {
-                console.log(`[DebugSessionManager] Continue request ${requestId} timed out.`);
-                this.resolveContinueRequest(requestId, { status: IPC_STATUS_TIMEOUT, message: `等待调试器再次停止或结束超时 (${timeout}ms)。` });
-            }, timeout);
-
-            const pendingRequest: PendingRequest = {
-                configurationName: session.configuration.name, // 用于日志或匹配，非关键
-                resolve: resolve,
-                timeoutTimer,
-                listeners: [], // continue 操作通常不需要新的 session 监听器
-                sessionId: sessionId, // 明确关联 sessionId
-                isResolved: false,
-            };
-            this.pendingContinueRequests.set(requestId, pendingRequest); // 存入新的 Map
-
-            // --- 发送 DAP 命令 ---
-            try {
-                console.log(`[DebugSessionManager] Sending 'continue' DAP request for session ${sessionId}, thread ${threadId}. Request ID: ${requestId}`);
-                await session.customRequest('continue', { threadId: threadId });
-                console.log(`[DebugSessionManager] 'continue' DAP request sent for ${requestId}. Waiting for events...`);
-                // 等待 DebugAdapterTracker 的 onDidSendMessage 处理 stopped 或 onDidTerminateDebugSession 处理 terminated
-            } catch (error: any) {
-                console.error(`[DebugSessionManager] Error sending 'continue' DAP request for ${requestId}:`, error);
-                this.resolveContinueRequest(requestId, { status: IPC_STATUS_ERROR, message: `发送 'continue' 请求失败: ${error.message}` });
-            }
-        });
-    }
-
-    // --- 实现 stepExecutionAndWait 方法 ---
-    public async stepExecutionAndWait(sessionId: string, threadId: number, stepType: 'over' | 'into' | 'out', timeoutMs: number = 30000): Promise<StepExecutionResult> {
-        const requestId = `step-${this.requestCounter++}`;
-        console.log(`[DebugSessionManager] Starting step request: ${requestId} for session ${sessionId}, thread ${threadId}, type ${stepType}`);
-
-        return new Promise<StepExecutionResult>(async (resolve, reject) => {
-            const session = vscode.debug.activeDebugSession?.id === sessionId ? vscode.debug.activeDebugSession : undefined;
-
-            if (!session) {
-                reject({ status: 'error', message: `未找到匹配的活动调试会话 ID: ${sessionId}` });
-                return;
-            }
-
-            // 检查会话状态，理论上应该处于 stopped 状态才能单步执行
-            // 注意：这里没有直接获取状态的方法，依赖于调用者确保状态正确
-            // if (this.getSessionState(session.id) !== 'stopped') { ... }
-
-            let dapCommand: string;
-            switch (stepType) {
-                case 'over': dapCommand = 'next'; break;
-                case 'into': dapCommand = 'stepIn'; break;
-                case 'out': dapCommand = 'stepOut'; break;
-                default:
-                    reject({ status: 'error', message: `无效的 step_type: ${stepType}` });
-                    return;
-            }
-
-            const timer = setTimeout(() => {
-                console.log(`[DebugSessionManager] Step request ${requestId} timed out.`);
-                this.resolveStepRequest(requestId, { status: 'timeout', message: `等待调试器在单步执行后停止超时 (${timeoutMs}ms)。` });
-            }, timeoutMs);
-
-            this.pendingStepRequests.set(requestId, { resolve, reject, timer, threadId, stepType, sessionId, isResolved: false });
-
-            try {
-                console.log(`[DebugSessionManager] Sending '${dapCommand}' DAP request for session ${sessionId}, thread ${threadId}. Request ID: ${requestId}`);
-                await session.customRequest(dapCommand, { threadId });
-                console.log(`[DebugSessionManager] '${dapCommand}' DAP request sent for ${requestId}. Waiting for events...`);
-                // 等待 DebugAdapterTracker 的 onDidSendMessage 处理 stopped 或 onDidTerminateDebugSession 处理 terminated
-            } catch (error: any) {
-                console.error(`[DebugSessionManager] Error sending '${dapCommand}' DAP request for ${requestId}:`, error);
-                this.resolveStepRequest(requestId, { status: 'error', message: `发送 ${dapCommand} 命令失败: ${error.message || error}` });
-            }
-        });
-    }
-
-    // --- 修改事件处理逻辑以支持 continue 和 step 请求 ---
 
     private initializeDebugListeners(): void {
-        // 监听调试会话启动
-        vscode.debug.onDidStartDebugSession(session => {
-            this.handleDebugSessionStarted(session);
-        });
+        vscode.debug.onDidStartDebugSession(session => this.handleDebugSessionStarted(session));
+        vscode.debug.onDidTerminateDebugSession(session => this.handleDebugSessionTerminatedInternal(session));
 
-        // 监听调试会话终止
-        vscode.debug.onDidTerminateDebugSession(session => {
-            this.handleDebugSessionTerminated(session); // 这个函数需要修改
-        });
-
-        // 注册 Debug Adapter Tracker Factory (用于拦截 stopped 事件等)
         vscode.debug.registerDebugAdapterTrackerFactory('*', {
             createDebugAdapterTracker: (session: vscode.DebugSession) => {
-                console.log(`[DebugSessionManager] createDebugAdapterTracker called for session ${session.id} (name: ${session.name}, type: ${session.type}).`);
-
+                console.log(`[DSM] Creating DebugAdapterTracker for session: id=${session.id}, type=${session.type}, name=${session.name}, parentId=${session.parentSession?.id}`);
+                // mainRequestId will be determined within each event handler based on currentMonitoringSessionId matching
+                
                 return {
                     onDidSendMessage: async (message: any) => {
-                        // 查找与此会话关联的、尚未解决的 *任何* 请求 (start, continue, 或 step)
-                        // 优先级：step > continue > start (因为 step/continue 依赖于已启动的会话)
-                        const currentRequestEntry = this.findPendingRequestBySessionId(session.id, true, true); // 查找 start, continue, step
-
-                        if (!currentRequestEntry) {
-                            // console.log(`[DebugSessionManager] No pending request found for session ${session.id} on message.`);
-                            return;
-                        }
-                        const [currentRequestId, currentRequest] = currentRequestEntry;
-                        // 检查 isResolved 属性，它存在于所有三种请求类型中
-                        if (currentRequest.isResolved) {
-                            // console.log(`[DebugSessionManager] Request ${currentRequestId} already resolved.`);
-                            return;
-                        }
-
-                        // 处理停止事件 (对 start, continue, step 都有效)
                         if (message.type === 'event' && message.event === 'stopped') {
-                            console.log(`[DebugSessionManager] Tracker for request ${currentRequestId} received 'stopped' event.`);
-                            try {
-                                const stopEventData = await this.debugStateProvider.buildStopEventData(session, message.body);
-                                console.log(`[DebugSessionManager] Stop event data built for ${currentRequestId}. Resolving promise.`);
+                            const eventSessionId = session.id;
+                            const requestEntry = this.findPendingRequestByCurrentMonitoringSessionIdInternal(eventSessionId);
+                            const reqIdForLog = requestEntry ? requestEntry[0] : 'unknown-request';
+                            console.log(`[DSM][Tracker][${reqIdForLog}] Received 'stopped' event for session ${eventSessionId}. Searching for pending request monitoring this session ID. Found: ${requestEntry ? requestEntry[0] : 'NO'}.`);
 
-                                // 根据请求 ID 前缀判断是哪个 Map
-                                if (currentRequestId.startsWith('start-')) {
-                                    this.resolveRequest(currentRequestId, { status: IPC_STATUS_STOPPED, data: stopEventData });
-                                } else if (currentRequestId.startsWith('continue-')) {
-                                    this.resolveContinueRequest(currentRequestId, { status: IPC_STATUS_STOPPED, data: stopEventData });
-                                } else if (currentRequestId.startsWith('step-')) {
-                                    // 检查 threadId 是否匹配 (仅对 step 请求)
-                                    const stepRequest = this.pendingStepRequests.get(currentRequestId);
-                                    if (stepRequest && stepRequest.threadId === message.body.threadId) {
-                                        this.resolveStepRequest(currentRequestId, { status: 'stopped', stop_event_data: stopEventData });
-                                    } else if (stepRequest) {
-                                        console.warn(`[DebugSessionManager] Stopped event threadId (${message.body.threadId}) does not match pending step request threadId (${stepRequest.threadId}) for ${currentRequestId}. Ignoring.`);
-                                        // 不解析此 step 请求，等待正确的线程停止或超时
-                                    }
+                            if (requestEntry) {
+                                const [requestId, pendingReqGeneric] = requestEntry;
+                                if (pendingReqGeneric.isResolved) return;
+
+                                try {
+                                    const stopEventData = await this.debugStateProvider.buildStopEventData(session, message.body);
+                                    console.log(`[DSM][Tracker][${requestId}] Stop event data built. Resolving promise.`);
+                                    const stoppedResponse: StartDebuggingResponsePayload = { status: IPC_STATUS_STOPPED, data: stopEventData };
+
+                                    this.resolveAnyRequestByType(requestId, stoppedResponse, eventSessionId);
+                                } catch (error: any) {
+                                    console.error(`[DSM][Tracker][${requestId}] Error building stop event data:`, error);
+                                    const errorResult: StartDebuggingResponsePayload = { status: IPC_STATUS_ERROR, message: `构建停止事件数据时出错: ${error.message}` };
+                                    this.resolveAnyRequestByType(requestId, errorResult, eventSessionId);
                                 }
-                            } catch (error: any) {
-                                console.error(`[DebugSessionManager] Error building stop event data for ${currentRequestId}:`, error);
-                                const errorResult: StartDebuggingResponsePayload | StepExecutionResult = { status: 'error', message: `构建停止事件数据时出错: ${error.message}` };
-                                 if (currentRequestId.startsWith('start-')) {
-                                    this.resolveRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                                } else if (currentRequestId.startsWith('continue-')) {
-                                    this.resolveContinueRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                                } else if (currentRequestId.startsWith('step-')) {
-                                    this.resolveStepRequest(currentRequestId, errorResult as StepExecutionResult);
-                                }
+                            } else {
+                                console.warn(`[DSM][Tracker] Received 'stopped' event for session ${eventSessionId}, but no pending request was actively monitoring this session ID.`);
                             }
+                        } else if (message.type === 'event' && message.event === 'terminated') {
+                            // Terminated event is primarily handled by onDidTerminateDebugSession
+                            // console.log(`[DSM][Tracker][${session.id}] Received 'terminated' event via tracker.`);
                         }
                     },
-                    onError: (error: Error) => { // 对 start, continue, step 都有效
-                        const currentRequestEntry = this.findPendingRequestBySessionId(session.id, true, true);
-                        if (!currentRequestEntry) { return; }
-                        const [currentRequestId, currentRequest] = currentRequestEntry;
-                        if (currentRequest.isResolved) { return; }
-                        console.error(`[DebugSessionManager] Debug adapter error for session ${session.id}, request ${currentRequestId}:`, error);
-                        const errorResult: StartDebuggingResponsePayload | StepExecutionResult = { status: 'error', message: `调试适配器错误: ${error.message}` };
-                        if (currentRequestId.startsWith('start-')) {
-                            this.resolveRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                        } else if (currentRequestId.startsWith('continue-')) {
-                            this.resolveContinueRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                        } else if (currentRequestId.startsWith('step-')) {
-                            this.resolveStepRequest(currentRequestId, errorResult as StepExecutionResult);
+                    onError: (error: Error) => {
+                        const eventSessionId = session.id;
+                        const requestEntry = this.findPendingRequestByCurrentMonitoringSessionIdInternal(eventSessionId, true); // checkInitialIdForStart = true
+                        const reqIdForLog = requestEntry ? requestEntry[0] : 'unknown-request';
+                        console.error(`[DSM][Tracker][${reqIdForLog}] Debug adapter error for session ${eventSessionId}:`, error);
+                        console.log(`[DSM][Tracker][${eventSessionId}] Received 'error' event. Searching for pending request monitoring this session ID (or initial for start). Found: ${requestEntry ? requestEntry[0] : 'NO'}.`);
+                        
+                        if (requestEntry) {
+                            const [requestId, pendingReqGenericUntyped] = requestEntry;
+                            if (pendingReqGenericUntyped.isResolved) return;
+
+                            // Only PendingStartRequest has isExtensionHostCase and initialSessionId
+                            if (requestId.startsWith('start-')) {
+                                const pendingStartReq = pendingReqGenericUntyped as PendingRequest;
+                                if (pendingStartReq.isExtensionHostCase &&
+                                    eventSessionId === pendingStartReq.initialSessionId &&
+                                    pendingStartReq.currentMonitoringSessionId === pendingStartReq.initialSessionId && // Critical: only if we are still waiting for child
+                                    error.message.includes('connection closed')) {
+                                    console.warn(`[DSM][${requestId}] Error/Closed event for initial PARENT session ${eventSessionId} while still monitoring it (currentMonitoringId is also ${pendingStartReq.currentMonitoringSessionId}). Waiting for child or timeout.`);
+                                    this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                    return;
+                                }
+                                if (eventSessionId === pendingStartReq.currentMonitoringSessionId) {
+                                    console.error(`[DSM][${requestId}] Error/Closed event for CURRENTLY MONITORED session ${eventSessionId}. Rejecting request.`);
+                                    const errorResult: StartDebuggingResponsePayload = { status: IPC_STATUS_ERROR, message: `调试适配器错误 (监控会话 ${eventSessionId}): ${error.message}` };
+                                    this.resolveRequestInternal(requestId, errorResult);
+                                    this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                    return;
+                                }
+                            } else if (eventSessionId === (pendingReqGenericUntyped as PendingRequest | PendingStepRequest).currentMonitoringSessionId) {
+                                // For continue or step requests
+                                console.error(`[DSM][${requestId}] Error/Closed event for CURRENTLY MONITORED session ${eventSessionId} (Continue/Step). Rejecting request.`);
+                                const errorResult: StartDebuggingResponsePayload = { status: IPC_STATUS_ERROR, message: `调试适配器错误 (监控会话 ${eventSessionId}): ${error.message}` };
+                                this.resolveAnyRequestByType(requestId, errorResult, eventSessionId);
+                                this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                return;
+                            }
+                            // If not caught by specific conditions above, log and potentially don't auto-resolve if it's not the current monitoring target
+                            console.warn(`[DSM][Tracker][${requestId}] onError for session ${eventSessionId}, but it's not the primary monitored session or specific parent condition not met. CurrentMonID: ${(pendingReqGenericUntyped as PendingRequest).currentMonitoringSessionId}`);
+                            this.logPendingRequestsStateInternal(eventSessionId, requestId);
+
+                        } else {
+                             console.warn(`[DSM][Tracker] onError for session ${eventSessionId}, but no active pending request found monitoring this session ID.`);
                         }
                     },
-                    onExit: (code: number | undefined, signal: string | undefined) => { // 对 start, continue, step 都有效
-                        const currentRequestEntry = this.findPendingRequestBySessionId(session.id, true, true);
-                        if (!currentRequestEntry) { return; }
-                        const [currentRequestId, currentRequest] = currentRequestEntry;
-                        if (currentRequest.isResolved) { return; }
-                        console.log(`[DebugSessionManager] Debug adapter exit for session ${session.id}, request ${currentRequestId}: code=${code}, signal=${signal}`);
-                        // 仅在请求未被其他方式解决时，才因 Adapter 退出而标记为错误
-                        const errorResult: StartDebuggingResponsePayload | StepExecutionResult = { status: 'error', message: `调试适配器意外退出 (code: ${code}, signal: ${signal})` };
-                         if (currentRequestId.startsWith('start-') && this.pendingStartRequests.has(currentRequestId)) {
-                            this.resolveRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                        } else if (currentRequestId.startsWith('continue-') && this.pendingContinueRequests.has(currentRequestId)) {
-                            this.resolveContinueRequest(currentRequestId, errorResult as StartDebuggingResponsePayload);
-                        } else if (currentRequestId.startsWith('step-') && this.pendingStepRequests.has(currentRequestId)) {
-                            this.resolveStepRequest(currentRequestId, errorResult as StepExecutionResult);
+                    onExit: (code: number | undefined, signal: string | undefined) => {
+                        const eventSessionId = session.id;
+                        const requestEntry = this.findPendingRequestByCurrentMonitoringSessionIdInternal(eventSessionId, true); // checkInitialIdForStart = true
+                        const reqIdForLog = requestEntry ? requestEntry[0] : 'unknown-request';
+                        console.log(`[DSM][Tracker][${reqIdForLog}] Debug adapter exit for session ${eventSessionId}: code=${code}, signal=${signal}.`);
+                        console.log(`[DSM][Tracker][${eventSessionId}] Received 'exit' event. Searching for pending request monitoring this session ID (or initial for start). Found: ${requestEntry ? requestEntry[0] : 'NO'}.`);
+
+                        if (requestEntry) {
+                            const [requestId, pendingReqGenericUntyped] = requestEntry;
+                             if (pendingReqGenericUntyped.isResolved) return;
+
+                            if (requestId.startsWith('start-')) {
+                                const pendingStartReq = pendingReqGenericUntyped as PendingRequest;
+                                if (pendingStartReq.isExtensionHostCase &&
+                                    eventSessionId === pendingStartReq.initialSessionId &&
+                                    pendingStartReq.currentMonitoringSessionId === pendingStartReq.initialSessionId) { // Still monitoring parent
+                                    console.warn(`[DSM][${requestId}] Initial PARENT session ${eventSessionId} exited (code: ${code}, signal: ${signal}) while still being monitored. Waiting for child or timeout.`);
+                                     this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                    return;
+                                }
+                                if (eventSessionId === pendingStartReq.currentMonitoringSessionId) {
+                                     console.error(`[DSM][${requestId}] CURRENTLY MONITORED session ${eventSessionId} exited. Rejecting request.`);
+                                     const errorResult: StartDebuggingResponsePayload = { status: IPC_STATUS_ERROR, message: `调试适配器意外退出 (监控会话 ${eventSessionId}, code: ${code}, signal: ${signal})` };
+                                     this.resolveRequestInternal(requestId, errorResult);
+                                     this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                     return;
+                                }
+                            } else if (eventSessionId === (pendingReqGenericUntyped as PendingRequest | PendingStepRequest).currentMonitoringSessionId) {
+                                console.error(`[DSM][${requestId}] CURRENTLY MONITORED session ${eventSessionId} (Continue/Step) exited. Rejecting request.`);
+                                const errorResult: StartDebuggingResponsePayload = { status: IPC_STATUS_ERROR, message: `调试适配器意外退出 (监控会话 ${eventSessionId}, code: ${code}, signal: ${signal})` };
+                                this.resolveAnyRequestByType(requestId, errorResult, eventSessionId);
+                                this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                                return;
+                            }
+                            console.warn(`[DSM][Tracker][${requestId}] onExit for session ${eventSessionId}, but it's not the primary monitored session or specific parent condition not met. CurrentMonID: ${(pendingReqGenericUntyped as PendingRequest).currentMonitoringSessionId}`);
+                            this.logPendingRequestsStateInternal(eventSessionId, requestId);
+                        } else {
+                            console.log(`[DSM][Tracker] onExit for session ${eventSessionId}, but no active pending request found monitoring this session ID.`);
                         }
                     }
                 };
@@ -231,266 +186,460 @@ export class DebugSessionManager {
         });
     }
 
-    // --- 迁移过来的方法 ---
-
     public async startDebuggingAndWait(configurationName: string, noDebug: boolean): Promise<StartDebuggingResponsePayload> {
-        const requestId = `start-${this.requestCounter++}`; // 使用内部计数器
-        console.log(`[DebugSessionManager] Starting debug request: ${requestId} for ${configurationName}`);
+        const requestId = `start-${this.requestCounter++}`;
+        console.log(`[DSM][${requestId}] Attempting to start debug session. Config: ${configurationName}, NoDebug: ${noDebug}`);
 
         return new Promise<StartDebuggingResponsePayload>(async (resolve) => {
-            let folder: vscode.WorkspaceFolder | undefined;
-            try {
-                folder = vscode.workspace.workspaceFolders?.[0];
-                if (!folder) {
-                    throw new Error('无法确定工作区文件夹。');
-                }
-            } catch (error: any) {
-                resolve({ status: IPC_STATUS_ERROR, message: error.message });
+            const folder = vscode.workspace.workspaceFolders?.[0];
+            if (!folder) {
+                console.error(`[DSM][${requestId}] Error: No workspace folder found.`);
+                resolve({ status: IPC_STATUS_ERROR, message: '无法确定工作区文件夹。' });
                 return;
             }
+
             const launchConfig = vscode.workspace.getConfiguration('launch', folder.uri);
             const configurations = launchConfig.get<vscode.DebugConfiguration[]>('configurations') || [];
             let targetConfig = configurations.find(conf => conf.name === configurationName);
+
             if (!targetConfig) {
-              resolve({ status: IPC_STATUS_ERROR, message: `找不到名为 '${configurationName}' 的调试配置。` });
-              return;
+                console.error(`[DSM][${requestId}] Debug configuration '${configurationName}' not found.`);
+                resolve({ status: IPC_STATUS_ERROR, message: `找不到名为 '${configurationName}' 的调试配置。` });
+                return;
             }
             if (noDebug) {
-              targetConfig = { ...targetConfig, noDebug: true };
+                targetConfig = { ...targetConfig, noDebug: true };
             }
+            console.log(`[DSM][${requestId}] Resolved targetConfig:`, JSON.stringify(targetConfig));
 
-            // --- 处理 ${file} 变量 ---
+            const isExtensionHost = targetConfig.type === 'extensionHost' || targetConfig.type === 'pwa-extensionHost';
+            console.log(`[DSM][${requestId}] Is extensionHost debug: ${isExtensionHost}`);
+
             if (typeof targetConfig.program === 'string' && targetConfig.program.includes('${file}')) {
                 const activeEditor = vscode.window.activeTextEditor;
                 if (activeEditor) {
-                    const currentFilePath = activeEditor.document.uri.fsPath;
-                    console.log(`[DebugSessionManager] Resolving \${file} in '${configurationName}' to: ${currentFilePath}`);
-                    // 确保替换时路径分隔符正确 (VS Code API 返回的 fsPath 通常是平台相关的正确路径)
-                    targetConfig.program = targetConfig.program.replace('${file}', currentFilePath);
+                    targetConfig.program = targetConfig.program.replace('${file}', activeEditor.document.uri.fsPath);
                 } else {
-                    // 没有活动编辑器，无法解析 ${file}
-                    console.error(`[DebugSessionManager] Cannot resolve \${file} for config '${configurationName}': No active text editor.`);
-                    // 直接返回错误，不调用 startDebugging
-                    // 注意：这里的 resolveRequest 是 DebugSessionManager 内部方法，用于结束 Promise
-                    this.resolveRequest(requestId, {
-                        status: IPC_STATUS_ERROR, // 使用常量
-                        message: `无法启动调试配置 '${configurationName}'：需要激活一个编辑器以解析 \${file} 变量。`
-                    });
-                    return; // 提前返回，不继续执行 startDebugging
+                    this.resolveRequestInternal(requestId, { status: IPC_STATUS_ERROR, message: `无法解析 \${file}，无活动编辑器。` });
+                    return;
                 }
             }
-            // --- ${file} 处理结束 ---
 
-            const listeners: vscode.Disposable[] = [];
-
-            const timeout = 60000; // 超时时间
-            const timeoutTimer = setTimeout(() => {
-                console.log(`[DebugSessionManager] Request ${requestId} timed out.`);
-                this.resolveRequest(requestId, { status: IPC_STATUS_TIMEOUT, message: `等待调试器首次停止或结束超时 (${timeout}ms)。` });
+            const timeout = isExtensionHost ? 120000 : 60000; // TODO: Make configurable
+            console.log(`[DSM][${requestId}] Setting timeout to ${timeout}ms.`);
+            const timeoutHandle = setTimeout(() => {
+                const req = this.pendingStartRequests.get(requestId);
+                if (req && !req.isResolved) {
+                    let msg = `等待调试器首次停止或结束超时 (${timeout}ms)。`;
+                    if (req.isExtensionHostCase) {
+                        msg = req.currentMonitoringSessionId
+                            ? `等待 extensionHost 主调试会话 (${req.currentMonitoringSessionId}) 停止或完成超时 (${timeout}ms)。`
+                            : `等待 extensionHost 主调试会话超时 (${timeout}ms)。初始会话ID: ${req.initialSessionId || '未记录'}, 当前监控ID: ${req.currentMonitoringSessionId || '未设置'}`;
+                    }
+                    console.warn(`[DSM][${requestId}] TIMEOUT while waiting for event from session: ${req.currentMonitoringSessionId || 'unknown'}. Initial session was: ${req.initialSessionId || 'unknown'}. Message: ${msg}`);
+                    this.resolveRequestInternal(requestId, { status: IPC_STATUS_TIMEOUT, message: msg });
+                }
             }, timeout);
 
             const pendingRequest: PendingRequest = {
+                requestId,
                 configurationName,
-                resolve: resolve,
-                timeoutTimer,
-                listeners,
+                resolve,
+                timeoutHandle,
+                listeners: [],
                 isResolved: false,
+                isExtensionHostCase: isExtensionHost,
+                initialSessionId: undefined, // Will be set in handleDebugSessionStarted if parent
+                currentMonitoringSessionId: undefined, // Will be set in handleDebugSessionStarted
             };
             this.pendingStartRequests.set(requestId, pendingRequest);
+            console.log(`[DSM][${requestId}] Created PendingRequest. InitialSessionId: ${pendingRequest.initialSessionId}, CurrentMonitoringSessionId: ${pendingRequest.currentMonitoringSessionId}`);
 
-            // 启动调试
             try {
-              console.log(`[DebugSessionManager] Calling vscode.debug.startDebugging for ${configurationName}`);
-              const success = await vscode.debug.startDebugging(folder, targetConfig);
-              if (!success) {
-                console.error(`[DebugSessionManager] vscode.debug.startDebugging returned false for ${configurationName}. Request ID: ${requestId}`);
-                this.resolveRequest(requestId, { status: IPC_STATUS_ERROR, message: 'VS Code 报告无法启动调试会话（startDebugging 返回 false）。' });
-              } else {
-                console.log(`[DebugSessionManager] vscode.debug.startDebugging call succeeded for ${configurationName}. Request ID: ${requestId}. Waiting for events...`);
-              }
+                console.log(`[DSM][${requestId}] Calling vscode.debug.startDebugging...`);
+                const success = await vscode.debug.startDebugging(folder, targetConfig);
+                console.log(`[DSM][${requestId}] vscode.debug.startDebugging returned: ${success}`);
+                if (!success && !pendingRequest.isResolved) {
+                    this.resolveRequestInternal(requestId, { status: IPC_STATUS_ERROR, message: 'VS Code 报告无法启动调试会话 (startDebugging 返回 false)。' });
+                } else if (success) {
+                    console.log(`[DSM][${requestId}] vscode.debug.startDebugging call succeeded. Waiting for session events...`);
+                }
             } catch (error: any) {
-              console.error(`[DebugSessionManager] Error calling vscode.debug.startDebugging for ${configurationName}. Request ID: ${requestId}:`, error);
-              this.resolveRequest(requestId, { status: IPC_STATUS_ERROR, message: `启动调试时出错: ${error.message}` });
+                if (!pendingRequest.isResolved) {
+                    console.error(`[DSM][${requestId}] Error calling vscode.debug.startDebugging:`, error);
+                    this.resolveRequestInternal(requestId, { status: IPC_STATUS_ERROR, message: `启动调试时出错: ${error.message}` });
+                }
             }
         });
     }
 
     private handleDebugSessionStarted(session: vscode.DebugSession): void {
-        console.log(`[DebugSessionManager] Debug session started: ${session.id} (${session.name})`);
-        // 尝试将此会话与挂起的启动请求关联
-        const matchingRequestEntry = Array.from(this.pendingStartRequests.entries())
-            .find(([reqId, req]) =>
-                req.configurationName === session.configuration.name &&
-                !req.sessionId && // 确保只关联一次
-                !req.isResolved
-            );
-
-        if (matchingRequestEntry) {
-            const [reqIdToAssociate, requestToAssociate] = matchingRequestEntry;
-            console.log(`[DebugSessionManager] Found matching pending request ${reqIdToAssociate} for session ${session.id}. Associating sessionId.`);
-            requestToAssociate.sessionId = session.id; // 关联 sessionId
-        } else {
-            console.warn(`[DebugSessionManager] No matching pending request found for started session ${session.id} with config name "${session.configuration.name}". This session might not be tracked by a startDebuggingAndWait call.`);
-        }
-    }
-
-    // 修改 handleDebugSessionTerminated 以处理 continue 请求
-    private handleDebugSessionTerminated(session: vscode.DebugSession): void {
-        console.log(`[DebugSessionManager] Debug session terminated: ${session.id} (${session.name})`);
-        // 清理与此会话相关的特定监听器
-        const listeners = this.sessionListeners.get(session.id);
-        if (listeners) {
-            listeners.forEach(d => d.dispose());
-            this.sessionListeners.delete(session.id);
-            console.log(`[DebugSessionManager] Disposed specific listeners for terminated session ${session.id}.`);
-        }
-
-        // 检查是否有等待此会话的 start, continue 或 step 请求
-        const terminatedRequestEntry = this.findPendingRequestBySessionId(session.id, true, true); // 查找所有类型
-        if (terminatedRequestEntry) {
-            const [terminatedRequestId, terminatedRequest] = terminatedRequestEntry;
-            if (!terminatedRequest.isResolved) {
-               console.log(`[DebugSessionManager] Resolving request ${terminatedRequestId} as completed due to session termination.`);
-               const completedResult: StartDebuggingResponsePayload | StepExecutionResult = { status: 'completed', message: '调试会话已结束。' };
-               if (terminatedRequestId.startsWith('start-')) {
-                   this.resolveRequest(terminatedRequestId, completedResult as StartDebuggingResponsePayload);
-               } else if (terminatedRequestId.startsWith('continue-')) {
-                   this.resolveContinueRequest(terminatedRequestId, completedResult as StartDebuggingResponsePayload);
-               } else if (terminatedRequestId.startsWith('step-')) {
-                   this.resolveStepRequest(terminatedRequestId, completedResult as StepExecutionResult);
-               }
+        console.log(`[DSM] Event: onDidStartDebugSession. Session: id=${session.id}, type=${session.type}, name=${session.name}, parentId=${session.parentSession?.id}, configName=${session.configuration.name}`);
+        this.activeSessions.set(session.id, session);
+    
+        let associatedRequestId: string | undefined;
+    
+        // --- Handling Child Sessions (extensionHost specific) ---
+        if (session.parentSession) {
+            const parentId = session.parentSession.id;
+            for (const [reqId, pendingReq] of this.pendingStartRequests.entries()) {
+                if (pendingReq.isExtensionHostCase && pendingReq.initialSessionId === parentId && !pendingReq.isResolved) {
+                    associatedRequestId = reqId;
+                    console.log(`[DSM][${reqId}] Child session ${session.id} started, its parent ${parentId} matches initialSessionId of this pending request.`);
+                    
+                    // Heuristic to identify the "main" child session
+                    const isPrimaryChild = session.type === 'pwa-chrome' &&
+                                           (session.name.includes('Extension Host') ||
+                                            session.name.includes(pendingReq.configurationName) || // Check against original config name
+                                            session.name.startsWith(pendingReq.configurationName)); // Check prefix
+    
+                    if (isPrimaryChild) {
+                        const oldMonitoringId = pendingReq.currentMonitoringSessionId;
+                        pendingReq.currentMonitoringSessionId = session.id; // Switch monitoring to the child
+                        console.log(`[DSM][${reqId}] Identified primary CHILD session: ${session.id} (parent: ${parentId}). UPDATED pending request to monitor CHILD session. Old monitoring ID: ${oldMonitoringId}, New monitoring ID: ${session.id}.`);
+                        // Optionally reset timeout here if needed
+                    } else {
+                        console.log(`[DSM][${reqId}] Ignoring non-primary extensionHost child: ${session.id} (type: ${session.type}, name: ${session.name}, parent: ${parentId})`);
+                    }
+                    break; // Found the relevant pending request for this child's parent
+                }
+            }
+            if (!associatedRequestId) {
+                console.log(`[DSM] Child session ${session.id} (parent: ${parentId}) started, but no matching pendingStartRequest found for its parent (isExtensionHostCase and initialSessionId match).`);
             }
         }
+        // --- Handling Parent Sessions or Non-ExtensionHost Sessions ---
+        else {
+            for (const [reqId, pendingReq] of this.pendingStartRequests.entries()) {
+                // Match by configuration name, ensure it's not resolved, and either not yet associated or it's the first association for an extension host parent
+                if (pendingReq.configurationName === session.configuration.name && !pendingReq.isResolved) {
+                    if (pendingReq.isExtensionHostCase) {
+                        if (!pendingReq.initialSessionId && (session.type === 'extensionHost' || session.type === 'pwa-extensionHost')) {
+                            associatedRequestId = reqId;
+                            pendingReq.initialSessionId = session.id;
+                            pendingReq.currentMonitoringSessionId = session.id; // Start by monitoring the parent
+                            console.log(`[DSM][${reqId}] Associated with initial PARENT session: ${session.id} (type: ${session.type}). Monitoring this session for events. currentMonitoringSessionId set to ${session.id}.`);
+                            break;
+                        }
+                    } else { // Not an extensionHost case
+                        if (!pendingReq.currentMonitoringSessionId) { // First association for this non-EH request
+                            associatedRequestId = reqId;
+                            pendingReq.currentMonitoringSessionId = session.id;
+                            console.log(`[DSM][${reqId}] Associated non-extensionHost session ${session.id} with pending request. currentMonitoringSessionId set to ${session.id}.`);
+                            break;
+                        } else if (pendingReq.currentMonitoringSessionId === session.id) {
+                            // Already tracking this session for this request, likely a re-entrant call or duplicate event, log and ignore.
+                            associatedRequestId = reqId; // Still the relevant request
+                            console.log(`[DSM][${reqId}] Session ${session.id} (non-EH) started, already monitoring this session for this request. No change.`);
+                            break;
+                        } else {
+                            console.warn(`[DSM][${reqId}] Non-extensionHost pending request already associated with ${pendingReq.currentMonitoringSessionId}, but new session ${session.id} started with same config name. This is unexpected.`);
+                        }
+                    }
+                }
+            }
+            if (!associatedRequestId) {
+                 console.log(`[DSM] No PENDING START request found to associate with (parent/non-EH) session ${session.id} (name: "${session.configuration.name}", type: ${session.type}).`);
+            }
+        }
+    
+        if (associatedRequestId) {
+            this.logPendingRequestsStateInternal(session.id, associatedRequestId);
+        } else {
+            // Log for sessions that didn't match any pending start request logic above
+            // This can happen for user-initiated debug sessions, or subsequent child sessions we don't explicitly track for a single start request.
+            console.log(`[DSM] Session ${session.id} (name: "${session.configuration.name}", type: ${session.type}) started, but did not match specific logic to update a pending start request's monitoring target. This may be normal for unrelated sessions or secondary children.`);
+        }
+    }
+    
+    private handleDebugSessionTerminatedInternal(session: vscode.DebugSession): void {
+        const eventSessionId = session.id;
+        console.log(`[DSM] Event: onDidTerminateDebugSession. Session: id=${eventSessionId}, type=${session.type}, name=${session.name}`);
+        this.activeSessions.delete(eventSessionId);
+        this.cleanupSessionListeners(eventSessionId);
+
+        // Check if this terminated session was an initial parent of an extensionHost debug
+        const pendingStartReqEntryForInitial = Array.from(this.pendingStartRequests.entries())
+            .find(([, req]) => req.isExtensionHostCase && req.initialSessionId === eventSessionId && !req.isResolved);
+
+        if (pendingStartReqEntryForInitial) {
+            const [reqId, pendingReq] = pendingStartReqEntryForInitial;
+            // If the parent terminates AND we are still monitoring it (meaning no child took over, or child also terminated and we reverted to parent)
+            // OR if we were monitoring a child that now terminated, but the parent is this one.
+            if (pendingReq.currentMonitoringSessionId === eventSessionId) {
+                 console.warn(`[DSM][${reqId}] Monitored session (which was initial parent) ${eventSessionId} terminated. If no child was identified or child also terminated, this might lead to timeout/error.`);
+                 // Don't resolve here directly, let timeout or tracker's onExit/onError for the *currentMonitoringSessionId* handle it.
+                 // Or, if we are sure no child will come, resolve as error.
+                 // For now, let existing logic in tracker.onError/onExit or timeout handle it.
+            } else if (pendingReq.currentMonitoringSessionId && pendingReq.currentMonitoringSessionId !== eventSessionId) {
+                 console.log(`[DSM][${reqId}] Initial extensionHost parent session ${eventSessionId} terminated. This is usually expected as child ${pendingReq.currentMonitoringSessionId} is/was tracked.`);
+            } else { // No currentMonitoringSessionId, means child was never identified
+                 console.warn(`[DSM][${reqId}] Initial extensionHost parent session ${eventSessionId} terminated, but no primary child session was identified or being monitored. Resolving as error.`);
+                 this.resolveRequestInternal(reqId, { status: IPC_STATUS_ERROR, message: `extensionHost 初始父会话 ${eventSessionId} 已终止，但未识别或监控到关键子会话。` });
+            }
+            this.logPendingRequestsStateInternal(eventSessionId, reqId);
+            return; // Handled this case.
+        }
+
+        // For all other cases (non-initial parent, or non-start requests)
+        const requestEntry = this.findPendingRequestByCurrentMonitoringSessionIdInternal(eventSessionId);
+        const reqIdForLog = requestEntry ? requestEntry[0] : 'unknown-request';
+        console.log(`[DSM][${eventSessionId}] Received 'terminated' event. Searching for pending request monitoring this session ID. Found: ${requestEntry ? requestEntry[0] : 'NO'}.`);
+
+        if (requestEntry) {
+            const [requestId, pendingReqGeneric] = requestEntry;
+            if (!pendingReqGeneric.isResolved) {
+                console.log(`[DSM][${requestId}] Resolving request as 'completed' due to tracked session ${eventSessionId} termination.`);
+                const completedResult: StartDebuggingResponsePayload = { status: IPC_STATUS_COMPLETED, message: `调试会话 ${eventSessionId} 已结束。` };
+                this.resolveAnyRequestByType(requestId, completedResult, eventSessionId);
+            } else {
+                console.log(`[DSM][${requestId}] Request for session ${eventSessionId} was already resolved.`);
+            }
+        } else {
+            console.log(`[DSM] No active pending request found monitoring terminated session ${eventSessionId}. Might be user-initiated or already handled.`);
+        }
     }
 
-    // --- 新增/修改辅助函数 ---
+    public async continueDebuggingAndWait(params: ContinueDebuggingParams): Promise<StartDebuggingResponsePayload> {
+        const { sessionId: currentSessionId, threadId } = params; // Renamed sessionId to currentSessionId for clarity
+        const requestId = `continue-${this.requestCounter++}`;
+        console.log(`[DSM][${requestId}] Starting continue request for session ${currentSessionId}, thread ${threadId}`);
 
-    // 封装的 resolve 函数，用于 continue 请求
-    private resolveContinueRequest(requestId: string, result: StartDebuggingResponsePayload): void {
+        return new Promise<StartDebuggingResponsePayload>(async (resolve) => {
+            if (!currentSessionId) {
+                resolve({ status: IPC_STATUS_ERROR, message: 'Continue中止：未提供 sessionId。' });
+                return;
+            }
+            const session = this.activeSessions.get(currentSessionId);
+            if (!session) {
+                resolve({ status: IPC_STATUS_ERROR, message: `找不到活动的调试会话 ID: ${currentSessionId}` });
+                return;
+            }
+
+            const timeout = 60000; // TODO: Make configurable
+            const timeoutHandle = setTimeout(() => {
+                this.resolveContinueRequestInternal(requestId, { status: IPC_STATUS_TIMEOUT, message: `等待调试器再次停止或结束超时 (${timeout}ms)。` });
+            }, timeout);
+
+            const pendingRequest: PendingRequest = {
+                requestId,
+                configurationName: session.configuration.name,
+                resolve,
+                timeoutHandle,
+                listeners: [],
+                currentMonitoringSessionId: currentSessionId, // Explicitly set the session being monitored
+                isResolved: false,
+                // isExtensionHostCase and initialSessionId are not typically relevant for continue
+            };
+            this.pendingContinueRequests.set(requestId, pendingRequest);
+            console.log(`[DSM][${requestId}] Created PendingRequest for continue. CurrentMonitoringSessionId: ${pendingRequest.currentMonitoringSessionId}`);
+
+            try {
+                await session.customRequest('continue', { threadId });
+                console.log(`[DSM][${requestId}] 'continue' DAP request sent. Waiting for events...`);
+            } catch (error: any) {
+                this.resolveContinueRequestInternal(requestId, { status: IPC_STATUS_ERROR, message: `发送 'continue' 请求失败: ${error.message}` });
+            }
+        });
+    }
+
+    public async stepExecutionAndWait(sessionIdParam: string | undefined, threadId: number, stepType: 'over' | 'into' | 'out', timeoutMs: number = 30000): Promise<StepExecutionResult> {
+        const requestId = `step-${this.requestCounter++}`;
+        const activeSessionId = sessionIdParam ?? vscode.debug.activeDebugSession?.id;
+
+        console.log(`[DSM][${requestId}] Starting step request for session ${activeSessionId}, thread ${threadId}, type ${stepType}`);
+
+        return new Promise<StepExecutionResult>(async (resolve, reject) => {
+            if (!activeSessionId) {
+                reject({ status: IPC_STATUS_ERROR, message: 'Step中止：无法确定有效的 sessionId。' } as StepExecutionResult);
+                return;
+            }
+            const session = this.activeSessions.get(activeSessionId);
+            if (!session) {
+                reject({ status: IPC_STATUS_ERROR, message: `未找到匹配的活动调试会话 ID: ${activeSessionId}` } as StepExecutionResult);
+                return;
+            }
+
+            const dapCommand = stepType === 'over' ? 'next' : stepType === 'into' ? 'stepIn' : 'stepOut';
+            const timeoutHandle = setTimeout(() => {
+                this.resolveStepRequestInternal(requestId, { status: IPC_STATUS_TIMEOUT, message: `等待调试器在单步执行后停止超时 (${timeoutMs}ms)。` } as StepExecutionResult);
+            }, timeoutMs);
+
+            this.pendingStepRequests.set(requestId, { requestId, resolve, reject, timeoutHandle, threadId, stepType, currentMonitoringSessionId: activeSessionId, isResolved: false });
+            console.log(`[DSM][${requestId}] Created PendingStepRequest. CurrentMonitoringSessionId: ${activeSessionId}`);
+            
+            try {
+                await session.customRequest(dapCommand, { threadId });
+                console.log(`[DSM][${requestId}] '${dapCommand}' DAP request sent. Waiting for events...`);
+            } catch (error: any) {
+                this.resolveStepRequestInternal(requestId, { status: IPC_STATUS_ERROR, message: `发送 ${dapCommand} 命令失败: ${error.message || error}` } as StepExecutionResult);
+            }
+        });
+    }
+
+    private resolveRequestInternal(requestId: string, result: StartDebuggingResponsePayload): void {
+        const pendingRequest = this.pendingStartRequests.get(requestId);
+        if (pendingRequest && !pendingRequest.isResolved) {
+            pendingRequest.isResolved = true;
+            clearTimeout(pendingRequest.timeoutHandle);
+            this.pendingStartRequests.delete(requestId);
+            console.log(`[DSM][${requestId}] Resolving start request with status: ${result.status}`);
+            pendingRequest.resolve(result);
+        } else if (pendingRequest?.isResolved) {
+            console.warn(`[DSM][${requestId}] Attempted to resolve already resolved start request.`);
+        } else {
+            console.warn(`[DSM][${requestId}] Attempted to resolve non-existent or cleaned up start request.`);
+        }
+    }
+
+    private resolveContinueRequestInternal(requestId: string, result: StartDebuggingResponsePayload): void {
         const pendingRequest = this.pendingContinueRequests.get(requestId);
         if (pendingRequest && !pendingRequest.isResolved) {
             pendingRequest.isResolved = true;
-            clearTimeout(pendingRequest.timeoutTimer);
+            clearTimeout(pendingRequest.timeoutHandle);
             this.pendingContinueRequests.delete(requestId);
-            console.log(`[DebugSessionManager] Resolving continue request ${requestId} with status: ${result.status}`);
+            console.log(`[DSM][${requestId}] Resolving continue request with status: ${result.status}`);
             pendingRequest.resolve(result);
-        } else if (!pendingRequest) {
-            console.warn(`[DebugSessionManager] Attempted to resolve already cleaned up or non-existent continue request: ${requestId}`);
+        } else if (pendingRequest?.isResolved) {
+            console.warn(`[DSM][${requestId}] Attempted to resolve already resolved continue request.`);
         } else {
-            console.warn(`[DebugSessionManager] Attempted to resolve already resolved continue request: ${requestId}`);
+            console.warn(`[DSM][${requestId}] Attempted to resolve non-existent or cleaned up continue request.`);
         }
     }
 
-    // 新增：封装的 resolve 函数，用于 step 请求
-    private resolveStepRequest(requestId: string, result: StepExecutionResult): void {
+    private resolveStepRequestInternal(requestId: string, result: StepExecutionResult): void {
         const pendingRequest = this.pendingStepRequests.get(requestId);
         if (pendingRequest && !pendingRequest.isResolved) {
             pendingRequest.isResolved = true;
-            clearTimeout(pendingRequest.timer);
+            clearTimeout(pendingRequest.timeoutHandle);
             this.pendingStepRequests.delete(requestId);
-            console.log(`[DebugSessionManager] Resolving step request ${requestId} with status: ${result.status}`);
-            // 根据状态决定调用 resolve 还是 reject
-            if (result.status === 'stopped' || result.status === 'completed') {
+            console.log(`[DSM][${requestId}] Resolving step request with status: ${result.status}`);
+            if (result.status === IPC_STATUS_STOPPED || result.status === IPC_STATUS_COMPLETED) {
                 pendingRequest.resolve(result);
             } else {
-                // 对于 timeout, interrupted, error 状态，调用 reject
-                pendingRequest.reject(result);
+                pendingRequest.reject(result); // Errors or timeout for step are rejected
             }
-        } else if (!pendingRequest) {
-            console.warn(`[DebugSessionManager] Attempted to resolve already cleaned up or non-existent step request: ${requestId}`);
+        } else if (pendingRequest?.isResolved) {
+            console.warn(`[DSM][${requestId}] Attempted to resolve already resolved step request.`);
         } else {
-            console.warn(`[DebugSessionManager] Attempted to resolve already resolved step request: ${requestId}`);
+            console.warn(`[DSM][${requestId}] Attempted to resolve non-existent or cleaned up step request.`);
         }
     }
-
-    // --- 辅助函数 ---
-
-    // 封装的 resolve 函数，确保清理 (用于 start 请求)
-    private resolveRequest(requestId: string, result: StartDebuggingResponsePayload): void {
-        const pendingRequest = this.pendingStartRequests.get(requestId);
-        if (pendingRequest && !pendingRequest.isResolved) {
-            pendingRequest.isResolved = true; // 标记为已解决
-            clearTimeout(pendingRequest.timeoutTimer);
-            this.pendingStartRequests.delete(requestId);
-            console.log(`[DebugSessionManager] Resolving request ${requestId} with status: ${result.status}`);
-            pendingRequest.resolve(result); // 调用原始 Promise 的 resolve
-        } else if (!pendingRequest) {
-            console.warn(`[DebugSessionManager] Attempted to resolve already cleaned up or non-existent request: ${requestId}`);
-        } else { // pendingRequest.isResolved === true
-            console.warn(`[DebugSessionManager] Attempted to resolve already resolved request: ${requestId}`);
+    
+    private resolveAnyRequestByType(requestId: string, result: StartDebuggingResponsePayload | StepExecutionResult, eventSessionId: string) {
+            console.log(`[DSM][${requestId}] Attempting to resolve request of type derived from prefix, due to event from session ${eventSessionId}. Status: ${result.status}`);
+            if (requestId.startsWith('start-')) {
+                const req = this.pendingStartRequests.get(requestId);
+                if (req && req.currentMonitoringSessionId === eventSessionId) {
+                     this.resolveRequestInternal(requestId, result as StartDebuggingResponsePayload);
+                } else if (req) {
+                    console.warn(`[DSM][${requestId}] 'start-' request resolution skipped: event session ${eventSessionId} does not match current monitoring session ${req.currentMonitoringSessionId}.`);
+                }
+            } else if (requestId.startsWith('continue-')) {
+                const req = this.pendingContinueRequests.get(requestId);
+                if (req && req.currentMonitoringSessionId === eventSessionId) {
+                    this.resolveContinueRequestInternal(requestId, result as StartDebuggingResponsePayload);
+                } else if (req) {
+                    console.warn(`[DSM][${requestId}] 'continue-' request resolution skipped: event session ${eventSessionId} does not match current monitoring session ${req.currentMonitoringSessionId}.`);
+                }
+            } else if (requestId.startsWith('step-')) {
+                const req = this.pendingStepRequests.get(requestId);
+                if (req && req.currentMonitoringSessionId === eventSessionId) {
+                    this.resolveStepRequestInternal(requestId, result as StepExecutionResult);
+                } else if (req) {
+                     console.warn(`[DSM][${requestId}] 'step-' request resolution skipped: event session ${eventSessionId} does not match current monitoring session ${req.currentMonitoringSessionId}.`);
+                }
+            } else {
+                console.warn(`[DSM][${requestId}] Could not determine request type from prefix to resolve.`);
+            }
         }
-    }
-
-     // 修改 findPendingRequestBySessionId 以支持查找所有类型请求
-     // 返回类型需要更通用，因为 step 请求的 value 类型不同
-    private findPendingRequestBySessionId(
-        sessionId: string,
-        includeContinue: boolean = false,
-        includeStep: boolean = false
-    ): [string, PendingRequest | { sessionId: string; isResolved: boolean }] | undefined {
-        // 优先级: step > continue > start
-        if (includeStep) {
+    
+        /**
+         * Finds a pending request (start, continue, or step) whose currentMonitoringSessionId matches the given sessionId.
+         * For start requests, if checkInitialIdForStart is true, it will also check initialSessionId.
+         */
+        private findPendingRequestByCurrentMonitoringSessionIdInternal(
+            eventSessionId: string,
+            checkInitialIdForStart: boolean = false
+        ): [string, PendingRequest | PendingStepRequest] | undefined {
+            for (const entry of this.pendingStartRequests.entries()) {
+                const req = entry[1];
+                if (!req.isResolved) {
+                    if (req.currentMonitoringSessionId === eventSessionId) return entry;
+                    // Special case for extensionHost parent session errors/exits before child is identified
+                    if (checkInitialIdForStart && req.isExtensionHostCase && req.initialSessionId === eventSessionId && req.currentMonitoringSessionId === req.initialSessionId) {
+                        return entry;
+                    }
+                }
+            }
+            for (const entry of this.pendingContinueRequests.entries()) {
+                const req = entry[1];
+                if (req.currentMonitoringSessionId === eventSessionId && !req.isResolved) return entry;
+            }
             for (const entry of this.pendingStepRequests.entries()) {
-                if (entry[1].sessionId === sessionId && !entry[1].isResolved) {
-                    // 返回兼容的结构，即使类型不同
-                    return entry as [string, { sessionId: string; isResolved: boolean }];
+                const req = entry[1];
+                if (req.currentMonitoringSessionId === eventSessionId && !req.isResolved) return entry;
+            }
+            return undefined;
+        }
+    
+        // findPendingContinueRequestBySessionIdInternal and findPendingStepRequestBySessionIdInternal
+        // are effectively replaced by the logic within findPendingRequestByCurrentMonitoringSessionIdInternal
+        // or by directly checking currentMonitoringSessionId on the specific request map if needed.
+        // Keeping them for now if specific non-monitoring ID based lookup is ever needed, but they seem redundant.
+    
+        private cleanupSessionListeners(sessionId: string): void {
+            const listeners = this.sessionListeners.get(sessionId);
+            if (listeners) {
+                listeners.forEach(d => d.dispose());
+                this.sessionListeners.delete(sessionId);
+                console.log(`[DSM] Disposed listeners for session ${sessionId}.`);
+            }
+        }
+    
+        private logPendingRequestsStateInternal(eventSessionId: string | undefined, currentRequestIdContext: string): void {
+            console.error(`[DSM][Tracker] Logging Pending Requests State (Context: eventSessionId=${eventSessionId}, currentReqId=${currentRequestIdContext}):`);
+            this.pendingStartRequests.forEach((req, id) => {
+                // Log if related to the event session or the specific request ID in context
+                if (req.initialSessionId === eventSessionId || req.currentMonitoringSessionId === eventSessionId || id === currentRequestIdContext) {
+                    console.error(`  - StartReq ID: ${id}, Resolved: ${req.isResolved}, Cfg: ${req.configurationName}, InitSessId: ${req.initialSessionId}, CurrMonSessId: ${req.currentMonitoringSessionId}, IsExtHost: ${req.isExtensionHostCase}`);
                 }
-            }
-        }
-        if (includeContinue) {
-             for (const entry of this.pendingContinueRequests.entries()) {
-                if (entry[1].sessionId === sessionId && !entry[1].isResolved) {
-                    return entry;
+            });
+            this.pendingContinueRequests.forEach((req, id) => {
+                if (req.currentMonitoringSessionId === eventSessionId || id === currentRequestIdContext) {
+                    console.error(`  - ContReq ID: ${id}, Resolved: ${req.isResolved}, CurrMonSessId: ${req.currentMonitoringSessionId}`);
                 }
-            }
-        }
-        // 最后查找 start 请求
-        for (const entry of this.pendingStartRequests.entries()) {
-            if (entry[1].sessionId === sessionId && !entry[1].isResolved) {
-                return entry;
-            }
-        }
-        return undefined;
+            });
+            this.pendingStepRequests.forEach((req, id) => {
+                if (req.currentMonitoringSessionId === eventSessionId || id === currentRequestIdContext) {
+                    console.error(`  - StepReq ID: ${id}, Resolved: ${req.isResolved}, CurrMonSessId: ${req.currentMonitoringSessionId}, TID: ${req.threadId}, Type: ${req.stepType}`);
+                }
+        });
     }
 
-    // 新增：专门查找 continue 请求的辅助函数 (保持不变)
-    private findPendingContinueRequestBySessionId(sessionId: string): [string, PendingRequest] | undefined {
-         for (const entry of this.pendingContinueRequests.entries()) {
-            if (entry[1].sessionId === sessionId && !entry[1].isResolved) {
-                return entry;
-            }
-        }
-        return undefined;
-    }
-
-    // 新增：专门查找 step 请求的辅助函数
-    private findPendingStepRequestBySessionId(sessionId: string): [string, typeof this.pendingStepRequests extends Map<string, infer V> ? V : never] | undefined {
-        for (const entry of this.pendingStepRequests.entries()) {
-           if (entry[1].sessionId === sessionId && !entry[1].isResolved) {
-               return entry;
-           }
-       }
-       return undefined;
-   }
-
-
-    // 可能需要添加停止调试的方法 (从规划示例添加)
     public stopDebugging(sessionId?: string): void {
         let sessionToStop: vscode.DebugSession | undefined;
         if (sessionId) {
-            sessionToStop = vscode.debug.activeDebugSession?.id === sessionId ? vscode.debug.activeDebugSession : undefined;
+            sessionToStop = this.activeSessions.get(sessionId);
             if (!sessionToStop) {
-                 console.warn(`[DebugSessionManager] Session ${sessionId} not found or not active.`);
+                if (vscode.debug.activeDebugSession && vscode.debug.activeDebugSession.id === sessionId) {
+                    sessionToStop = vscode.debug.activeDebugSession;
+                } else {
+                    console.warn(`[DSM] stopDebugging: Session ${sessionId} not found in activeSessions or as activeDebugSession.`);
+                }
             }
         } else {
             sessionToStop = vscode.debug.activeDebugSession;
         }
-
+    
         if (sessionToStop) {
-            console.log(`[DebugSessionManager] Requesting stop for debug session: ${sessionToStop.id}`);
-            vscode.debug.stopDebugging(sessionToStop);
+            console.log(`[DSM] Requesting stop for debug session: ${sessionToStop.id} (name: ${sessionToStop.name})`);
+            vscode.debug.stopDebugging(sessionToStop).then(
+                () => console.log(`[DSM] Stop request for ${sessionToStop!.id} completed.`),
+                (err) => console.error(`[DSM] Error stopping session ${sessionToStop!.id}:`, err)
+            );
         } else {
-            console.log("[DebugSessionManager] No active debug session to stop.");
+            console.log("[DSM] stopDebugging: No active debug session to stop, or specified session not found.");
         }
     }
 }
