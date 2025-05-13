@@ -69,7 +69,7 @@ export const stepExecutionTool = {
                 if (result.status === 'stopped') {
                     return {
                         status: 'stopped',
-                        stop_event_data: result.stop_event_data,
+                        stop_event_data: result,
                     };
                 } else if (result.status === 'completed') {
                     return {
