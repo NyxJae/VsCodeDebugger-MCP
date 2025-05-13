@@ -2,7 +2,7 @@
   "name": "vscode-debugger-mcp",
   "displayName": "VsCode-Debugger-MCP",
   "description": "An MCP server combined with a VSCode plugin provides AI with the capability for breakpoint debugging within VSCode.",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "publisher": "NyxJae",
   "repository": {
     "type": "git",
