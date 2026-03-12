@@ -1,5 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { parse, ParseError, printParseErrorCode } from 'jsonc-parser';
 import { z } from 'zod';
 import * as Constants from '../../constants';
 import { logger } from '../../config'; // 导入 logger
@@ -60,8 +61,17 @@ export const getDebuggerConfigurationsTool = {
             const fileContent = await fs.readFile(launchJsonPath, 'utf-8');
 
             try {
-                const jsonStringWithoutComments = fileContent.replace(/\/\/.*|\/\*[\s\S]*?\*\//g, '');
-                const parsedJson: unknown = JSON.parse(jsonStringWithoutComments);
+                const parseErrors: ParseError[] = [];
+                const parsedJson: unknown = parse(fileContent, parseErrors, {
+                    allowTrailingComma: true,
+                });
+
+                if (parseErrors.length > 0) {
+                    const firstParseError = parseErrors[0];
+                    const errorMsg = `launch.json file format error: ${printParseErrorCode(firstParseError.error)} at offset ${firstParseError.offset}`;
+                    logger.error(`[MCP Tool - ${toolName}] Error parsing launch.json: ${errorMsg}`); // 使用 logger
+                    return { status: Constants.IPC_STATUS_ERROR, message: errorMsg };
+                }
 
                 if (
                     typeof parsedJson === 'object' &&
